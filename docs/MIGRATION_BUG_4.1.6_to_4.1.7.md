@@ -251,7 +251,7 @@ Both are also available as columns in InventCommander's own CSV logging.
 ---
 
 *Unofficial, reverse-engineered documentation for interoperability with the author's own
-hardware. Not affiliated with or endorsed by the vendor. No vendor binaries, firmware or
-calibration files are distributed in this repository — use the files shipped with your own
-copy of the vendor software. Modifying ECU data is at your own risk; verify stationary
-before driving.*
+hardware. Not affiliated with or endorsed by the vendor. No vendor binaries or firmware
+are distributed in this repository; the sample map is the author's own ECU read-out,
+shared for reference — obtain the vendor software and original base calibrations from the
+vendor. Modifying ECU data is at your own risk; verify stationary before driving.*

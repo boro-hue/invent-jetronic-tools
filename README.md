@@ -2,7 +2,7 @@
 
 Unofficial, community-made logging and reverse-engineering tools for the **Invent Jetronic** aftermarket standalone ECU, as used on classic-car EFI conversions (old Mercedes, Audi, and similar).
 
-> **Unofficial.** This project is not affiliated with, endorsed by, or supported by the ECU vendor. Everything here was reverse-engineered from serial traffic between the author's own ECU and the vendor's InventCommander app, purely for interoperability with the author's own hardware. This repository contains **no vendor software, firmware, or calibration files** — obtain those from the vendor.
+> **Unofficial.** This project is not affiliated with, endorsed by, or supported by the ECU vendor. Everything here was reverse-engineered from serial traffic between the author's own ECU and the vendor's InventCommander app, purely for interoperability with the author's own hardware. This repository contains **no vendor software or firmware**; the sample map in `samples/` is the author's own tuned configuration, read out of the author's own ECU and shared for reference — obtain the vendor's software and original base calibrations from the vendor.
 
 **About to update ECU firmware from 4.1.6 to 4.1.7?** Read [docs/MIGRATION_BUG_4.1.6_to_4.1.7.md](docs/MIGRATION_BUG_4.1.6_to_4.1.7.md) first (summary in the warning section below).
 
@@ -11,7 +11,7 @@ Unofficial, community-made logging and reverse-engineering tools for the **Inven
 - `jetronic_logger.py` — a standalone continuous logger that talks the ECU's serial protocol directly, over the USB/FTDI cable or the ECU's built-in Bluetooth. It writes plain CSV you can open in anything.
 - `docs/` — the reverse-engineered protocol and channel map, a Bluetooth guide, a detailed write-up of a firmware-migration bug, flash-hygiene working habits, M103 conversion field notes, and the exact vehicle setup everything was verified on.
 - `re-tools/` — the toolkit that was used to decode the protocol, so you can verify or extend the channel map for your own firmware and engine.
-- `samples/` — a reference patch (the exact road-verified changes for an M103 + 190 cc install) and a complete example log from the documented car.
+- `samples/` — the road-verified reference map for an M103 + 190 cc install, the same changes as an apply-it-yourself patch, and a complete example log from the documented car.
 
 The vendor's Commander app remains the tool for viewing and changing settings and for flashing. These tools fill one gap: **reliable, gap-free logging while driving**, plus public documentation of how the ECU talks.
 
@@ -92,7 +92,7 @@ If you have already updated: read the ECU back with Commander and compare the mi
 | `docs/FLASH_HYGIENE.md` | Safe map/firmware working habits: numbered revisions, write → read-back → byte-compare, one change per flash, never trusting a settings migration. |
 | `docs/M103_CONVERSION_NOTES.md` | Field notes from the M103 KE-Jetronic → EFI conversion: the injector-flow preset trap, the idle target-table ledge, reading closed-loop correction as a config-error detector, idle-valve checklist. |
 | `docs/VEHICLE_SETUP.md` | The exact car and configuration all of this was developed and verified on. |
-| `samples/` | Reference patch (exact road-verified M103 + 190 cc changes — **do not apply blindly**) and a complete ~8-min example log. |
+| `samples/` | Road-verified M103 + 190 cc reference map + the same changes as a patch (**do not flash/apply blindly**) and a complete ~8-min example log. |
 
 | `re-tools/` | The reverse-engineering toolkit used to build the channel map — USB sniffing procedure (`SNIFFING.md`, `capture_combo.ps1`), pcap/frame decoding (`decode_pcap.py`, `analyze_frames.py`, `split_frames.py`), and regression tools that map raw bytes to Commander channels (`align_decode.py`, `validate_decode.py`, `decode_live.py`). Use these to verify or extend the map for other firmwares and engines. |
 | `drafts/` | Reusable write-ups: the vendor bug report template and a forum announcement post. |
@@ -115,7 +115,7 @@ What that means for you:
 
 - **Use at your own risk.** The logger itself is read-only, but you will be using it around a running engine and, guided by the docs, possibly changing ECU settings or firmware with the vendor's own software. Modifying ECU data can make an engine run dangerously lean, stall, or be damaged. Verify every change stationary — at idle and with throttle blips, logger running — before you drive, and keep first test drives short and cautious.
 - Unofficial and unaffiliated: all protocol information was derived by observing traffic from the author's own hardware, for interoperability. Nothing here speaks for the vendor.
-- **No vendor binaries:** this repository contains no vendor firmware, software, or calibration files, and none will be accepted in issues or pull requests. Please obtain them from the vendor and do not share them.
+- **No vendor binaries:** this repository contains no vendor firmware or software, and none will be accepted in issues or pull requests — please obtain those from the vendor and do not share them. Tuned maps read out of **your own** ECU are welcome as reference contributions (like the one in `samples/`), with personal identifiers removed.
 
 ## License
 

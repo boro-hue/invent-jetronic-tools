@@ -29,7 +29,7 @@ Everything in this repository — the logger, the protocol notes, the migration-
 | Throttle | TPS calibrated 0–100 %; the separate idle/full-load switch inputs are not correctly wired on this install (both read active — a known open item, documented so you can compare) |
 | Connection | ECU's FTDI FT232R USB-serial (the Commander cable) and the on-board HC-06 Bluetooth module |
 
-## State of tune (exact changes published in `samples/M103_190cc_fw417_reference_patch.md`)
+## State of tune (full map in `samples/M103_190cc_fw417_reference_map.imf`; exact changes in `samples/M103_190cc_fw417_reference_patch.md`)
 
 Stock M103 base calibration plus, in order of application:
 

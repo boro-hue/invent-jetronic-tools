@@ -1,6 +1,6 @@
 # Reference patch — M103 + 190 cc injectors on firmware 4.1.7_update1
 
-This is the **complete, exact set of changes** applied to the stock Invent M103 base calibration to produce the road-verified state described in [`../docs/VEHICLE_SETUP.md`](../docs/VEHICLE_SETUP.md). It is published as a *patch* rather than a full `.imf` so the repo contains no vendor calibration data — you apply these edits to **your own** ECU read-out.
+This is the **complete, exact set of changes** applied to the stock Invent M103 base calibration to produce the road-verified state described in [`../docs/VEHICLE_SETUP.md`](../docs/VEHICLE_SETUP.md). Apply these edits to **your own** ECU read-out; the author's full map is in `M103_190cc_fw417_reference_map.imf` next to this file if you prefer to diff directly.
 
 `.imf` files are plain-text INI. You can make every change below either in the Commander UI or with a text editor on a saved copy of your read-out. Follow [`../docs/FLASH_HYGIENE.md`](../docs/FLASH_HYGIENE.md) for every flash: numbered copy → write → read back → byte-compare → verify stationary with a log.
 

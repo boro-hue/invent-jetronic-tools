@@ -44,4 +44,4 @@ Close Commander first — the ECU accepts one connection at a time.
 
 ## Fine print
 
-Everything here is **unofficial**: reverse-engineered for interoperability with my own hardware, not affiliated with or endorsed by Invent. Genuine respect to Invent — the hardware is great value; the goal is to help users and get one migration bug fixed, and a detailed report is going to them directly. Use at your own risk: modifying ECU data can stall or damage an engine, so verify every change stationary before driving. And please, no vendor binaries or firmware files in this thread or in the repo — tools and docs only.
+Everything here is **unofficial**: reverse-engineered for interoperability with my own hardware, not affiliated with or endorsed by Invent. Genuine respect to Invent — the hardware is great value; the goal is to help users and get one migration bug fixed, and a detailed report is going to them directly. Use at your own risk: modifying ECU data can stall or damage an engine, so verify every change stationary before driving. And please, no vendor software or firmware files in this thread or in the repo — tools, docs, and read-outs of your own ECU only.

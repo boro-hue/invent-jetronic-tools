@@ -2,16 +2,17 @@
 
 Real files from the project that produced this repo, shared as **reference material**.
 
-## `M103_190cc_fw417_reference_patch.md`
+## `M103_190cc_fw417_reference_map.imf` + `M103_190cc_fw417_reference_patch.md`
 
-The **complete, exact set of changes** behind the road-verified map for a **Mercedes M103 3.0 (6-cyl, NA, catalyst)** conversion (fw 4.1.7_update1, 190 cc injectors, EZL retained — full setup in [`../docs/VEHICLE_SETUP.md`](../docs/VEHICLE_SETUP.md)).
+The road-verified configuration for a **Mercedes M103 3.0 (6-cyl, NA, catalyst)** conversion (fw 4.1.7_update1, 190 cc injectors, EZL retained — full setup in [`../docs/VEHICLE_SETUP.md`](../docs/VEHICLE_SETUP.md)), in two forms:
 
-It is published as a *patch you apply to your own ECU read-out* rather than a full `.imf`, so the repo contains no vendor calibration data. Covers: the injector-flow VE compensation (×150/190), the idle lambda-target flatten (12 cells), the 4.1.6→4.1.7 migration parameter repair, and the idle-target tweak — each with exact cell indexes and values, plus the warnings that go with them.
+- **The full map** (`.imf`, plain-text INI) — the author's own ECU read-out, shared for **diffing against your own read-out** (any diff tool works). Device identifiers removed.
+- **The patch** (`.md`) — the same changes as exact cell indexes and values you apply to *your own* read-out: injector-flow VE compensation (×150/190), idle lambda-target flatten (12 cells), the 4.1.6→4.1.7 migration parameter repair, and the idle-target tweak, each with its warnings.
 
-### ⚠ DO NOT APPLY BLINDLY
+### ⚠ DO NOT FLASH OR APPLY BLINDLY
 
-- The VE change assumes **190 cc injectors with the flow field left at the preset's 150** — on a car whose flow is already configured correctly it makes the mixture **~21 % lean**, which can damage an engine under load.
-- Sensor calibrations, idle-valve settings and input wiring are install-specific.
+- The tune assumes **190 cc injectors with the flow field left at the preset's 150** — on a car with correctly-configured or different injectors it runs **~21 % lean**, which can damage an engine under load.
+- Sensor calibrations, idle-valve settings and input wiring are install-specific — the map carries this car's values, not yours.
 - If you flash any map: write → read back → byte-compare → verify stationary with a log before driving. See [`../docs/FLASH_HYGIENE.md`](../docs/FLASH_HYGIENE.md). Modifying ECU data can stall or damage an engine — use at your own risk.
 
 ## `example_log_start_idle_blips_drive.csv`
