@@ -37,21 +37,32 @@ engine.
 
 **If a fresh M103 conversion runs badly, check in this order:**
 
-1. Configured injector flow vs. the injectors actually fitted (section 1).
+1. The mismatch between the base calibration and the injectors actually fitted (section 1).
 2. The AFR target table's idle columns (section 2).
 3. What the closed-loop correction is telling you (section 3).
 4. Idle valve closed loop and input-switch configuration (section 4).
 
 ---
 
-## 1. The injector-flow trap — check this FIRST
+## 1. The injector-mismatch trap — check this FIRST
 
-**The M103 base calibration stores an injector flow of 150 cc/min** (the injector preset
-the car shipped with — listed as "Bosch 107" in the software — holds 150 internally; in the
-raw calibration this is Param1 byte index 7 = `0x96` = 150). Most M103 conversions fit
-**190 cc/min @ 3 bar** injectors. Nobody changed the flow field, so the ECU under-estimated
-the injectors and the engine ran **190/150 = +26.7 % ≈ 27 % rich everywhere**, from the
-first start.
+**The M103 base calibration fuels roughly 27–30 % rich with 190 cc/min injectors.** The
+base cal ships with the injector preset listed as "Bosch 107" in the software and is
+evidently calibrated for smaller injectors; most M103 conversions fit **190 cc/min @
+3 bar** injectors, and on the unchanged base map the test engine ran **≈ 27 % rich
+everywhere, from the first start** (a uniform error matching 190/150 = +26.7 % almost
+exactly).
+
+> **Correction (2026-08-06) — there is no injector-flow field; the old decode was wrong.**
+> Earlier revisions of this page decoded `Param1raw` byte 7 (`0x96` = 150 in the base cal)
+> as "injector flow in cc/min" and recommended setting it to the real flow as the preferred
+> fix. Flash testing disproved that: **Param1[7] is the "Cold enrichment" field on
+> Commander's *Injection → Engine start* tab — a cranking-only enrichment (stock M103
+> value 150; that it matched the old "150 cc/min" story is coincidence)**. The UI field
+> tracked the byte exactly across two flashes (150 → 190), and the running mixture did not
+> change with it, while VE-table changes moved fueling 1:1. **Running fuel follows the VE
+> table alone — the only injector-size correction on this ECU is the global VE rescale
+> below.**
 
 ### How it looks
 
@@ -59,30 +70,45 @@ first start.
 |---|---|
 | Lambda correction at warm idle (CLT 80–86 °C) | `LambdaCorrFast` oscillating **−27…−34 %**, centered ≈ **−30 %** (healthy bang-bang regulation, not railed) |
 | Same at 60–70 °C coolant | −22…−23 % (slightly different cells → small VE shape error on top of the global one) |
-| Fuel economy | **22.7 L/100 km indicated** city (normal M103 automatic: ~13–15). Real figure ≈ 29 — see note below |
+| Fuel economy | **22.7 L/100 km indicated** city (normal M103 automatic: ~13–15; the channel's absolute scale is unverified — see note below) |
 | Idle fuel burn | ~4.4 L/h warm idle (later ~1.9 L/h once fixed) |
 | Subjective | Feels ~30 % down on power, sooted plugs, slight idle misfire, poor economy. Rich running also damages the catalyst |
 
-**FuelConsumed caveat:** the ECU computes its fuel-used channel from the *configured* flow.
-With 150 configured / 190 real it under-reports by ~27 %, so the true economy was ≈ 29
-L/100 km. After the fix the channel agreed with injector duty-cycle math within 4–6 %.
+**FuelConsumed caveat:** the flow constant behind the ECU's fuel-used channel has not been
+decoded (it is *not* Param1[7] — see the correction above). An earlier revision claimed the
+channel under-read by exactly 190/150 and inferred a "true" ≈ 29 L/100 km; that arithmetic
+rested on the wrong decode and is retracted. Treat the channel as *relative* — it did drop
+in step with the fueling fix — and calibrate its absolute scale against a full-tank
+fill-up before trusting litre figures.
 
-### The fix — in exactly ONE place
+### The fix — one global VE rescale, applied exactly once
 
-Two equivalent fixes. Pick **one**, write down which, and never mix them:
-
-- **Preferred:** set the injector flow field in the software to the real value (150 → 190).
-- **Alternative** (used on the test car for procedural reasons): scale the whole VE table
-  (`InjVe3d`) by 150/190 = **−21.05 %**.
+Scale the whole VE table (`InjVe3d`) by 150/190 = **−21.05 %**, in one uniform step.
+(Earlier revisions offered "set the injector flow field to 190" as the preferred
+alternative — see the correction above: that field does not exist, and the byte it pointed
+at only adds cranking fuel.)
 
 Result on the test car: next warm idle log showed corrections collapse from ~−30 % to
 **0…+6 %**. That single change removed the rich running, the soot, and most of the wasted
 fuel.
 
-> **Warning — double-lean risk.** If the fix went into the VE table, **never later change
-> the injector preset/flow field without reverting the VE scaling first.** Both corrections
-> applied together lean the engine by ~21 % — enough to stall at idle and dangerously lean
-> under load. The same applies in reverse. One fix, one place, documented.
+> **Warning — lean risk.** The rescale is a one-time correction for *this* mismatch. Apply
+> it to a map whose VE was already corrected — or to a car with different injectors — and
+> the engine runs **~21 % lean**, enough to stall at idle and dangerously lean under load.
+> Record the rescale in your revision notes. (What the software's injector-preset dropdown
+> actually rewrites is not decoded — leave it alone on a corrected map, and re-verify with
+> a log if you must change it.)
+
+### Verified `Param1raw` anchors — Commander's *Injection → Engine start* tab
+
+Byte decodes confirmed against the Commander UI on 4.1.7_update1 (0-based indexes into
+`Param1raw`):
+
+| Byte | UI field | Meaning |
+|---|---|---|
+| `Param1[7]` | **Cold enrichment** | Cranking-only enrichment; stock M103 = 150. No effect on running fuel |
+| `Param1[23]` | **Idle position** | Idle-valve preset for engine start — also the valve's park position at low runlevels |
+| `Param1[24]` | **Idle pos cold add** | Cold-start additive on top of *Idle position* |
 
 ### Injector sizing sanity check
 
@@ -126,7 +152,7 @@ Closed-loop lambda correction only runs in cells whose target is stoich (14.7).
 Entering a non-stoich cell **disengages closed loop and resets the learned correction
 to 0**. In-gear idle on an automatic (~650–750 rpm at 60+ kPa under converter load) lives
 permanently in the 13.x cells — so on the unfixed base map the car sat open-loop at a true
-~11–12 AFR at every red light, on top of the flow error.
+~11–12 AFR at every red light, on top of the global rich error from section 1.
 
 ### The fix — flatten the low-load idle cells only
 
@@ -173,19 +199,19 @@ enrichment is zero). Then:
 
 | What you see | What it means | What to do |
 |---|---|---|
-| Large offset (beyond ~±15–20 %), roughly the **same in every warm cell** | **Global configuration error** — injector flow, fuel pressure, dead time. Not a table problem | Fix the configuration. Do not tune it out cell-by-cell |
+| Large offset (beyond ~±15–20 %), roughly the **same in every warm cell** | **Global calibration error** — injector size vs what the calibration assumes, fuel pressure, dead time. Not a VE-shape problem | Correct it once, globally (for an injector mismatch that is one uniform VE rescale — section 1; there is no flow field). Do not tune it out cell-by-cell |
 | Small offsets (single digits) that **differ per cell** | VE table shape error | Closed loop absorbs it; polish the cells later from logged data |
 | Correction **pinned at exactly 0** | Cell is probably open-loop (non-stoich target), or the correction was just reset (transient / adaptation banking) | No information — check the cell's target AFR before concluding anything |
 
 Worked example from the test car: a uniform ≈ **−30 %** at warm idle matched the predicted
-+26.7 % flow mismatch almost exactly; after the one-line flow fix the corrections read
-0…+6 % — and the small remaining offset (+4…7 % lean, at ~900 rpm / 46 kPa cells) was a
-genuine per-cell VE shape error, left to closed loop.
++26.7 % injector mismatch almost exactly; after the single global VE rescale the
+corrections read 0…+6 % — and the small remaining offset (+4…7 % lean, at ~900 rpm /
+46 kPa cells) was a genuine per-cell VE shape error, left to closed loop.
 
-The general lesson: **a large, stable correction is the ECU telling you a number in the
-configuration is wrong.** Tuning tables to cancel a configuration error bakes the mistake
-into every table and makes later changes dangerous (see the double-lean warning in
-section 1).
+The general lesson: **a large, stable, uniform correction is the ECU telling you something
+global is wrong.** Cancel it with one documented global correction — never cell-by-cell,
+which bakes the mistake into the table's shape and makes later changes dangerous (see the
+lean-risk warning in section 1).
 
 ---
 

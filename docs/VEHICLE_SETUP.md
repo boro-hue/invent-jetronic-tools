@@ -33,7 +33,7 @@ Everything in this repository — the logger, the protocol notes, the migration-
 
 Stock M103 base calibration plus, in order of application:
 
-1. **Global VE ×(150/190)** — compensates the preset's 150 cc/min injector-flow assumption vs the real 190 cc injectors (~27–30 % rich as delivered).
+1. **Global VE ×(150/190)** — the stock base cal fueled the fitted 190 cc injectors ~27–30 % rich; this uniform rescale zeroed the closed-loop error. The VE table is the only running-fuel lever — the ECU has no injector-flow field (see the correction of 2026-08-06 in the [conversion notes](M103_CONVERSION_NOTES.md)).
 2. **Idle lambda-target flatten** — 600–700 rpm columns, 20–70 kPa rows: 13.0 → 14.7 AFR (removes an idle limit cycle).
 3. **Post-migration parameter repair** — Param2 tail restored to stock 4.1.7 values, head defaults harmonized (the migration bug).
 4. Warm idle target 800 rpm.

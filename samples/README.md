@@ -7,11 +7,11 @@ Real files from the project that produced this repo, shared as **reference mater
 The road-verified configuration for a **Mercedes M103 3.0 (6-cyl, NA, catalyst)** conversion (fw 4.1.7_update1, 190 cc injectors, EZL retained — full setup in [`../docs/VEHICLE_SETUP.md`](../docs/VEHICLE_SETUP.md)), in two forms:
 
 - **The full map** (`.imf`, plain-text INI) — the author's own ECU read-out, shared for **diffing against your own read-out** (any diff tool works). Device identifiers removed.
-- **The patch** (`.md`) — the same changes as exact cell indexes and values you apply to *your own* read-out: injector-flow VE compensation (×150/190), idle lambda-target flatten (12 cells), the 4.1.6→4.1.7 migration parameter repair, and the idle-target tweak, each with its warnings.
+- **The patch** (`.md`) — the same changes as exact cell indexes and values you apply to *your own* read-out: injector-mismatch VE compensation (×150/190), idle lambda-target flatten (12 cells), the 4.1.6→4.1.7 migration parameter repair, and the idle-target tweak, each with its warnings.
 
 ### ⚠ DO NOT FLASH OR APPLY BLINDLY
 
-- The tune assumes **190 cc injectors with the flow field left at the preset's 150** — on a car with correctly-configured or different injectors it runs **~21 % lean**, which can damage an engine under load.
+- The tune assumes **190 cc injectors on the otherwise-stock M103 base VE** — on a car whose VE is already corrected for its injectors, or with different injectors, it runs **~21 % lean**, which can damage an engine under load.
 - Sensor calibrations, idle-valve settings and input wiring are install-specific — the map carries this car's values, not yours.
 - If you flash any map: write → read back → byte-compare → verify stationary with a log before driving. See [`../docs/FLASH_HYGIENE.md`](../docs/FLASH_HYGIENE.md). Modifying ECU data can stall or damage an engine — use at your own risk.
 

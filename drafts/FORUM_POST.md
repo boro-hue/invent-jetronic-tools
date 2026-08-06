@@ -31,7 +31,7 @@ Close Commander first — the ECU accepts one connection at a time.
 - **docs/PROTOCOL.md** — the serial protocol: framing, commands, verified channel map
 - **docs/BLUETOOTH.md** — pairing and wireless-logging guide
 - **re-tools/** — the toolkit that auto-derives the channel map, so you can extend it to other engines and firmware versions
-- M103 conversion field notes (injector-flow preset trap, idle-target ledge, methodology)
+- M103 conversion field notes (injector-mismatch trap, idle-target ledge, methodology)
 - a flash-hygiene guide — the read-back habits that caught all of the above
 - a ready-to-send bug report for Invent about the migration issue
 

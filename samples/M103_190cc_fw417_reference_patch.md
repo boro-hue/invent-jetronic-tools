@@ -4,9 +4,9 @@ This is the **complete, exact set of changes** applied to the stock Invent M103 
 
 `.imf` files are plain-text INI. You can make every change below either in the Commander UI or with a text editor on a saved copy of your read-out. Follow [`../docs/FLASH_HYGIENE.md`](../docs/FLASH_HYGIENE.md) for every flash: numbered copy → write → read back → byte-compare → verify stationary with a log.
 
-> ⚠ **These values are correct only for this install** (190 cc @ 3-bar-rated injectors on a 4-bar non-vacuum-referenced regulator, flow field left at the preset's 150 cc/min, M103 NA, narrowband-behaving lambda). Blindly applying the VE change to a car whose flow field is already correct makes it **~21 % lean** — engine-damage territory. Read the reasoning in [`../docs/M103_CONVERSION_NOTES.md`](../docs/M103_CONVERSION_NOTES.md) first. Use at your own risk.
+> ⚠ **These values are correct only for this install** (190 cc @ 3-bar-rated injectors on a 4-bar non-vacuum-referenced regulator, otherwise-stock M103 base VE, M103 NA, narrowband-behaving lambda). Blindly applying the VE change to a car whose VE is already right for its injectors makes it **~21 % lean** — engine-damage territory. Read the reasoning in [`../docs/M103_CONVERSION_NOTES.md`](../docs/M103_CONVERSION_NOTES.md) first. Use at your own risk.
 
-## 1. Injector-flow compensation (fixes ~27–30 % rich)
+## 1. Injector-mismatch VE compensation (fixes ~27–30 % rich)
 
 `[Tables] InjVe3d` (16×16, hex bytes): multiply **every** cell by `150/190 ≈ 0.7895`, rounding to nearest integer.
 
@@ -17,7 +17,7 @@ vals = [int(x, 16) for x in line.split("=")[1].split(",")]
 vals = [round(v * 150 / 190) for v in vals]
 ```
 
-*Alternative:* if your app version exposes the injector-flow field directly, set it to your real flow instead and leave `InjVe3d` stock — **do one or the other, never both.**
+*Correction (2026-08-06):* an earlier revision offered setting an "injector-flow field" (`Param1raw` byte 7) as the alternative fix. That decode was wrong — **`Param1[7]` is the cranking-only "Cold enrichment" field** on Commander's *Injection → Engine start* tab and does not scale running fuel. The VE rescale is the only fix; see the correction note in [`../docs/M103_CONVERSION_NOTES.md`](../docs/M103_CONVERSION_NOTES.md).
 
 ## 2. Idle lambda-target flatten (fixes a ~1.3 s idle limit cycle)
 

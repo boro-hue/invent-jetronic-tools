@@ -90,7 +90,7 @@ If you have already updated: read the ECU back with Commander and compare the mi
 | `docs/BLUETOOTH.md` | Pairing and wireless-logging guide. |
 | `docs/MIGRATION_BUG_4.1.6_to_4.1.7.md` | The firmware-migration bug: discovery, root cause, how to detect it on your ECU, and the fix. |
 | `docs/FLASH_HYGIENE.md` | Safe map/firmware working habits: numbered revisions, write → read-back → byte-compare, one change per flash, never trusting a settings migration. |
-| `docs/M103_CONVERSION_NOTES.md` | Field notes from the M103 KE-Jetronic → EFI conversion: the injector-flow preset trap, the idle target-table ledge, reading closed-loop correction as a config-error detector, idle-valve checklist. |
+| `docs/M103_CONVERSION_NOTES.md` | Field notes from the M103 KE-Jetronic → EFI conversion: the injector-mismatch trap (with the 2026-08-06 `Param1[7]` decode correction), the idle target-table ledge, reading closed-loop correction as a config-error detector, idle-valve checklist. |
 | `docs/VEHICLE_SETUP.md` | The exact car and configuration all of this was developed and verified on. |
 | `samples/` | Road-verified M103 + 190 cc reference map + the same changes as a patch (**do not flash/apply blindly**) and a complete ~8-min example log. |
 
