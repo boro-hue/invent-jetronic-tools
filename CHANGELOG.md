@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-06 — New tool: `jetronic_live.py` (live tuning copilot)
+
+Streams telemetry while driving, attributes lambda fast-correction to VE cells in real
+time (steadiness / warm / closed-loop / cell-proximity gates), and builds a damped,
+check-summed `.imf` proposal on demand or automatically at engine-off. Build-only by
+design — it never writes to the ECU; flashing stays a stopped-car operation in
+InventCommander, verified via Read All + md5. Auto-reconnects across USB dropouts and
+writes its raw CSV line-buffered so a crash cannot lose a log. Validated by replaying a
+25-minute drive log: proposals matched a hand-derived revision cell-for-cell in direction.
+See the "Live tuning copilot" section in the README.
+
 ## 2026-08-06 — Correction: `Param1[7]` is cranking "Cold enrichment", NOT injector flow
 
 Earlier revisions of these docs decoded `.imf` `Param1raw` byte 7 as "injector flow in

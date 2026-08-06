@@ -29,6 +29,21 @@ This logger polls the ECU's live-telemetry frame itself at a steady rate and wri
 - **Reconnect-friendly** — Bluetooth connects with retries while the RFCOMM link comes up, and the logger is a single self-contained script that is easy to wrap in a retry loop for long drive logs.
 - **Handshake / probe / capture modes** — connection smoke test, passive baud scan, and raw byte capture with timing, for protocol work on other firmwares.
 - **Read-only by design** — the logger sends only the three documented poll commands (live telemetry, firmware version, ECU name). It never writes to the ECU.
+- **Live tuning copilot** (`jetronic_live.py`) — streams telemetry while you drive, attributes lambda correction to VE cells through quality gates (warm, steady-state, closed-loop, cell-centred), and builds a damped, check-summed `.imf` proposal the moment you stop. Build-only: you flash it yourself in Commander, then verify with Read All + md5.
+
+## Live tuning copilot
+
+`jetronic_live.py` closes the tune-iterate loop without ever writing to the ECU:
+
+```
+py jetronic_live.py --live --maps-dir "C:\path\to\Commander\Maps\Jetronic_XXXX"
+```
+
+Drive normally. A single console line shows the current VE cell, live lambda correction, and `DIP!`/`RICH`/`LEAN` warnings. When you stop: press **b** (build and keep driving), **q** (build and quit), or just switch the engine off — it auto-builds. The proposal patches the newest `read_all` from Commander's own history folder (= what is actually in the ECU), applies **half** the measured correction (clamped ±8 % per build, ≥200 steady samples per cell, 3 % dead-band), touches **only** cells the drive actually visited, and prints the file path + md5. Flash it in Commander with the car stopped, run Read All, compare the md5 — done, drive on.
+
+Why it deliberately never flashes: a malformed write to an ECU metering fuel at speed fails lean, and every flash resets the ECU's lambda adaptation — so flashing more often than ~15–20 min intervals makes convergence *slower*. The copilot compresses the analysis step to zero and leaves the flash itself deliberate, verified, and stationary.
+
+Offline mode: `py jetronic_live.py --replay logs\jlog_xxx.csv --maps-dir ...` runs the identical pipeline over a recorded log. (That's also how it was validated: replaying a 25-minute drive log reproduced a hand-derived map revision cell-for-cell in direction.)
 
 ## Quick start
 
