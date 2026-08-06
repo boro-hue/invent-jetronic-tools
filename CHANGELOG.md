@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-08-06 — Session-report exports + AI backup, `CLAUDE.md`, migration recommendation
+
+- `jetronic_live.py` now **exports a session report on every build**
+  (`exports/jlive_report_*.json` + `.md`): per-cell stats with spread, the sample
+  rejection funnel, warning events, health flags, and the proposal. The report is a
+  self-contained hand-off artifact for deeper (human or AI) analysis when the internal
+  math is not enough.
+- New **AI backup option** (advisory-only, never applied automatically): `--ai on-fail`
+  consults an AI when health flags fire (low acceptance, scattered samples, high-spread
+  cells, neighbour sign conflicts), `--ai always` after every build. Default backend is
+  the Claude Code CLI (`claude -p`); any model via `--ai-cmd` (report on stdin). Advice
+  is saved to `exports/ai_advice_*.md`.
+- New **`CLAUDE.md`**: full project context for AI assistants — verified decode anchors,
+  `.imf` format rules, discovered firmware behaviours (idle anchor, run-level demotion
+  trapdoor, adaptation resets, correction-speed asymmetry), and hard safety rules.
+- README: the 4.1.6 → 4.1.7 section now carries an explicit recommendation — **do not
+  migrate a 4.1.6 map; start from the stock 4.1.7 preset** and re-enter settings. The
+  documented car's migration was effectively brute-forced back to health and still
+  produced weeks of subtle after-effects.
+- New **worked example** in `samples/`: a real 25-minute drive log
+  (`example_drive_25min_rb15.csv`), the session report exported from it, and
+  `LIVE_TUNING_EXAMPLE.md` — the full walkthrough including the blind cross-check
+  against a hand-built revision and the health flags catching a real hardware misfire
+  from correction spread alone.
+
 ## 2026-08-06 — New tool: `jetronic_live.py` (live tuning copilot)
 
 Streams telemetry while driving, attributes lambda fast-correction to VE cells in real

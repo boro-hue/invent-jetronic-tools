@@ -2,6 +2,10 @@
 
 Real files from the project that produced this repo, shared as **reference material**.
 
+## `example_drive_25min_rb15.csv` + `example_live_tuning_report.md` + [`LIVE_TUNING_EXAMPLE.md`](LIVE_TUNING_EXAMPLE.md)
+
+A complete worked example of the **live tuning copilot** ([`jetronic_live.py`](../jetronic_live.py)): a real 25-minute / 14.35 km drive log, the session report the tool exported from it, and a full walkthrough — rejection funnel, the 9-cell damped proposal, the blind cross-check against a hand-built revision, and the health flags independently detecting a known hardware misfire from per-cell correction spread. Reproduce with one command, no hardware: `py jetronic_live.py --replay samples\example_drive_25min_rb15.csv --maps-dir <your Maps folder>`. Start with [`LIVE_TUNING_EXAMPLE.md`](LIVE_TUNING_EXAMPLE.md).
+
 ## `M103_190cc_fw417_reference_map.imf` + `M103_190cc_fw417_reference_patch.md`
 
 The road-verified configuration for a **Mercedes M103 3.0 (6-cyl, NA, catalyst)** conversion (fw 4.1.7_update1, 190 cc injectors, EZL retained — full setup in [`../docs/VEHICLE_SETUP.md`](../docs/VEHICLE_SETUP.md)), in two forms:

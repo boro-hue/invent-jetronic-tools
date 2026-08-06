@@ -45,6 +45,8 @@ Why it deliberately never flashes: a malformed write to an ECU metering fuel at 
 
 Offline mode: `py jetronic_live.py --replay logs\jlog_xxx.csv --maps-dir ...` runs the identical pipeline over a recorded log. (That's also how it was validated: replaying a 25-minute drive log reproduced a hand-derived map revision cell-for-cell in direction.)
 
+**Session reports + AI backup.** Every build also exports a self-contained session report (`exports/jlive_report_*.json` + `.md`): per-cell statistics with spread, the sample rejection funnel (why data was discarded, gate by gate), warning events, health flags, and the proposal. If the internal math struggles — low acceptance, scattered samples, high-spread cells (misfire contamination), sign conflicts between neighbours — the report is the hand-off artifact for a smarter analysis. Optionally automate that hand-off: `--ai on-fail` consults an AI only when health flags fire, `--ai always` after every build. Default backend is the Claude Code CLI (`claude -p`, uses your existing login); any other model works via `--ai-cmd "your-command"` (report arrives on stdin). **AI output is advice saved to `exports/ai_advice_*.md` — it is never applied automatically, and the AI is instructed to never recommend flashing while moving.** No CLI installed? The export happens regardless — the `.md` report is written to be pasted into any AI chat (or read by Claude Code via this repo's `CLAUDE.md` context) as the manual version of the same backup path.
+
 ## Quick start
 
 You need: Python 3, the ECU's USB/FTDI cable (or a paired Bluetooth link), ignition ON, and **InventCommander closed** — the ECU accepts one connection at a time, and the logger will tell you if the port is busy.
@@ -96,11 +98,15 @@ Pairing steps, picking the right COM port, and the gotchas (one connection at a 
 
 If you have already updated: read the ECU back with Commander and compare the migrated parameters against a fresh stock 4.1.7 calibration for your engine **before** driving. The write-up is meant as a reproducible bug report — the goal is to help get the migration fixed, and to keep other cars off the road shoulder in the meantime.
 
+**Recommendation (learned the hard way): do NOT carry a 4.1.6 map across the update at all.** On the documented car the 4.1.6 → 4.1.7 conversion was effectively brute-forced — migrated bytes were repaired slot-by-slot against a stock calibration until the engine behaved — and even "repaired", weeks of subtle after-effects kept tracing back to it. The clean path is: **start from the stock 4.1.7 preset for your engine** (Commander ships one, e.g. `v4.1.7_MB_6cyl_M103.imf`), re-enter your known-good settings (sensors, TPS calibration, engine specs, injector config, idle/PID values) on top of it, and re-tune fuel from there with closed-loop correction as your guide. It costs an evening; the migration debugging cost weeks.
+
 ## Repo map
 
 | Path | What it is |
 |---|---|
 | `jetronic_logger.py` | The logger. One file, pyserial is the only dependency. |
+| `jetronic_live.py` | The live tuning copilot: per-cell lambda-correction accumulation while driving, damped build-only `.imf` proposals, session-report exports, optional AI backup. |
+| `CLAUDE.md` | Full project context for AI assistants (Claude Code reads it automatically; paste into any other AI): verified decode anchors, `.imf` format rules, discovered firmware behaviours, safety rules, and how tuning converges here. |
 | `docs/PROTOCOL.md` | The reverse-engineered serial protocol: link settings (19200 8N1, RTS/DTR line state), frame format, poll commands, and the verified channel map with byte offsets and scalings. |
 | `docs/BLUETOOTH.md` | Pairing and wireless-logging guide. |
 | `docs/MIGRATION_BUG_4.1.6_to_4.1.7.md` | The firmware-migration bug: discovery, root cause, how to detect it on your ECU, and the fix. |
