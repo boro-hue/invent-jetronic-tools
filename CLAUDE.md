@@ -125,6 +125,11 @@ settings on top, re-tune fuel via closed-loop correction.**
   2E/2F/31/3B (write/actuate/routines) or 10/27 (session/security). Mode 22 decodes in
   its profile are unverified candidates until checked against a known reference.
   Tests: `cd mustang_obd && python -m unittest test_mustang_obd` (simulator, no hardware).
+  `mustang_obd/android/` is the same logic in Java (Android app). Its OBD core
+  (`Elm`/`Pids`/`Obd`/`LogSession`/`Snapshot`) must stay behaviour-identical to the Python
+  tool — `android/test/run_tests.sh` checks decoder parity and CSV headers against it; the
+  whitelist lives in `Elm.guardObd`/`guardAt`. Java 8 source, no lambdas (the APK is dexed
+  with `dx`); build with `android/build_apk.sh`, UI tests with `android/test/run_ui_tests.sh`.
 
 ## How tuning actually converges here (for an AI advising a user)
 

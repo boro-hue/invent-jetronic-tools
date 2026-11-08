@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-11-08 — `mustang_obd` Android app
+
+- New **Android app** (`mustang_obd/android/`, APK in `dist/`, Android 6+): the OBD logger
+  ported to Java — same discovery, tiers, multi-PID/count shortcuts, CSV columns (checked
+  identical to the Python tool), snapshot (DTCs, freeze frame, Mode 06 misfire counters,
+  IDs) and the same read-only whitelist. Classic Bluetooth (SPP), BLE, WiFi and a built-in
+  Demo car; a foreground service keeps logging with the screen off; files go to
+  Download/MustangOBD; Share button; optional adapter trace.
+- Built without Android Studio (`build_apk.sh`: javac + dx + aapt2 + apksigner) and tested
+  on the JVM (decoder parity with Python over ~27 000 vectors, both simulators, the
+  third-party ELM327-emulator) and on Robolectric for Android 6/9/12/12L (launch, adapter
+  dialog, demo log with notification, Stop, saved files incl. MediaStore, Share, snapshot,
+  permission denial). Not yet run on a physical phone.
+- Fix (Python tool): PID 0xA6 (odometer) decoded a value from a too-short 3-byte answer;
+  it now requires the full 4 bytes, like every other decoder.
+
 ## 2026-11-08 — New, separate tool: `mustang_obd/` (OBD-II logger)
 
 Not related to the Jetronic ECU: a read-only catch-all OBD-II logger for ELM327-type

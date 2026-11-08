@@ -12,6 +12,10 @@ results), 09 (vehicle info) and 22 (ReadDataByIdentifier). It cannot clear codes
 write, run routines or change diagnostic sessions — anything else is refused in code
 before a byte is sent (`guard_obd` / `guard_at`, covered by tests).
 
+**On a phone?** The same tool as an Android app (Android 6+), with a foreground service so
+logging survives the screen turning off: see [android/README.md](android/README.md) — APK in
+[`android/dist/`](android/dist/).
+
 ## What it captures
 
 | | How often | Where |

@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 logs/
 captures/
+mustang_obd/android/build/
+elm.log*

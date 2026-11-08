@@ -659,7 +659,7 @@ _pid(0x8E, "Engine friction percent torque", ("FrictionTorque_pct", lambda d: d[
 _pid(0xA2, "Cylinder fuel rate", ("CylFuelRate_mg", lambda d: _u16(d) / 32))
 _pid(0xA4, "Transmission actual gear",
      ("Gear", lambda d: d[1] >> 4), ("GearRatio", lambda d: _u16(d, 2) / 1000))
-_pid(0xA6, "Odometer", ("Odometer_km", lambda d: int.from_bytes(bytes(d[:4]), "big") / 10))
+_pid(0xA6, "Odometer", ("Odometer_km", lambda d: (_u16(d) << 16 | _u16(d, 2)) / 10))
 
 # Snapshot-only: constant for the whole drive, captured in the snapshot / log meta.
 STATIC_PIDS = {0x13, 0x1C, 0x1D, 0x1E, 0x4F, 0x50, 0x51, 0x5F, 0x63, 0x64}
