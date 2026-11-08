@@ -1,0 +1,34 @@
+{
+  "vehicle": "2016 Ford Mustang 3.7 V6 (Cyclone Ti-VCT), PCM on HS-CAN 7E0/7E8",
+  "notes": [
+    "Enhanced (Mode 22, ReadDataByIdentifier) data is manufacturer-specific and NOT standardised.",
+    "Every decode below is a community-cited CANDIDATE, unverified on this car. The tool always logs the raw bytes next to the decoded value, so a wrong formula can be fixed later from the same log.",
+    "Verify each value against a known reference before trusting it, then edit 'status'.",
+    "expr: A..Z are the data bytes after the DID; helpers S8(a) U16(a,b) S16(a,b) U24(a,b,c) U32(a,b,c,d).",
+    "Find more DIDs with:  py mustang_obd.py --bt --scan-dids quick   then add them here, or log all of them raw with --extra-dids <scan.csv>.",
+    "ECUs answering an unknown DID with requestOutOfRange are skipped automatically at start-up."
+  ],
+  "dids": [
+    {
+      "ecu": "7E0",
+      "did": "1E1C",
+      "name": "TransFluidTemp_C",
+      "expr": "S16(A,B)/16",
+      "status": "CANDIDATE: widely cited Ford 6R80 transmission fluid temperature (Torque Pro Ford set / forums). Automatic only - a manual (MT82) car will not answer. Sanity check: fully warm fluid is about 80-85 C per the 6R80 workshop manual."
+    },
+    {
+      "ecu": "7E0",
+      "did": "DD01",
+      "name": "Odometer_km",
+      "expr": "U24(A,B,C)",
+      "status": "CANDIDATE: Ford 'total distance' identifier seen on many Ford modules; units believed km. Compare with the instrument cluster (which may display miles)."
+    }
+  ],
+  "ident_dids": [
+    {"ecu": "7E0", "did": "F190", "name": "VIN", "status": "ISO 14229 standard identifier"},
+    {"ecu": "7E0", "did": "F188", "name": "ECU_SoftwareNumber", "status": "ISO 14229 standard identifier"},
+    {"ecu": "7E0", "did": "F111", "name": "Ford_F111", "status": "Ford identification range (part numbers); read for reference"},
+    {"ecu": "7E0", "did": "F113", "name": "Ford_F113", "status": "Ford identification range (part numbers); read for reference"},
+    {"ecu": "7E0", "did": "F124", "name": "Ford_F124", "status": "Ford identification range (calibration); read for reference"}
+  ]
+}

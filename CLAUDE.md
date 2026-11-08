@@ -118,6 +118,13 @@ settings on top, re-tune fuel via closed-loop correction.**
   the report is the hand-off artifact for AI analysis (`--ai on-fail|always`, default
   backend `claude -p`, or any `--ai-cmd`). AI output is advisory only.
 - `re-tools/` — the USB-sniffing / regression toolkit used to derive the channel map.
+- `mustang_obd/` — **separate car, separate protocol**: generic read-only OBD-II logger
+  (ELM327 over BT/BLE/WiFi/USB) for a 2016 Mustang 3.7 V6. None of the Jetronic notes
+  above apply to it. Its read-only whitelist (`guard_obd`/`guard_at`: services 01 02 03
+  06 07 09 0A 22 only, never a bare CR) is a hard rule — never add 04/14 (clear codes),
+  2E/2F/31/3B (write/actuate/routines) or 10/27 (session/security). Mode 22 decodes in
+  its profile are unverified candidates until checked against a known reference.
+  Tests: `cd mustang_obd && python -m unittest test_mustang_obd` (simulator, no hardware).
 
 ## How tuning actually converges here (for an AI advising a user)
 

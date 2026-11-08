@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-08 — New, separate tool: `mustang_obd/` (OBD-II logger)
+
+Not related to the Jetronic ECU: a read-only catch-all OBD-II logger for ELM327-type
+adapters over classic Bluetooth (COM port or RFCOMM), BLE, WiFi or USB, written for a
+2016 Ford Mustang 3.7 V6 and usable on any CAN OBD-II car. Logs every supported Mode 01
+PID (decoded + raw) with tiered polling, multi-PID requests and auto-reconnect; a
+snapshot mode dumps trouble codes, freeze frame, Mode 06 results (per-cylinder misfire
+counts) and vehicle IDs; a Mode 22 scanner discovers enhanced Ford identifiers. Every
+request passes a read-only whitelist (no code clearing, no writes). Ships with an
+ELM327 + Mustang simulator (`--demo`) and 28 tests; not yet run on a real car.
+
 ## 2026-08-06 — Session-report exports + AI backup, `CLAUDE.md`, migration recommendation
 
 - `jetronic_live.py` now **exports a session report on every build**
