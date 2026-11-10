@@ -63,7 +63,7 @@ public class LoggerService extends Service {
         AppState.snapshotText = null;
         try {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-            wake = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MustangOBD:logging");
+            wake = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, AppState.car().folder + ":logging");
             wake.acquire();
         } catch (RuntimeException e) {
             wake = null;
@@ -82,7 +82,7 @@ public class LoggerService extends Service {
         return new Session.TransportFactory() {
             @Override
             public Transport create() throws IOException {
-                if ("demo".equals(kind)) return new SimTransport();
+                if ("demo".equals(kind)) return new SimTransport(AppState.car().id);
                 if ("wifi".equals(kind)) {
                     String host = addr;
                     int port = 35000;
@@ -136,7 +136,8 @@ public class LoggerService extends Service {
                 AppState.LISTENER.values(latest, rows, rate);
             }
         };
-        Session s = new Session(factory(kind, addr, name), "6", ui);
+        Car car = AppState.car();
+        Session s = new Session(factory(kind, addr, name), car.protocol, ui);
         AppState.session = s;
         OutputStream traceOut = null;
         try {
@@ -156,11 +157,15 @@ public class LoggerService extends Service {
             }
             if ("snapshot".equals(job)) {
                 Snapshot snap = new Snapshot(s, sink);
+                snap.profile = car.profile;
+                snap.toolName = car.appName + " (Android)";
                 snap.run();
                 AppState.snapshotText = snap.text;
                 AppState.status = "Snapshot saved: " + sink.where(snap.txtName);
             } else {
                 LogSession log = new LogSession(s, sink);
+                log.profile = car.profile;
+                log.toolName = car.appName + " (Android)";
                 log.run();
                 AppState.status = "Stopped. " + log.rows + " rows saved: " + sink.where(log.csvName);
             }
@@ -217,7 +222,7 @@ public class LoggerService extends Service {
                 new Intent(this, LoggerService.class).setAction(ACTION_STOP),
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         b.setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-                .setContentTitle("Mustang OBD")
+                .setContentTitle(AppState.car().appName)
                 .setContentText(text)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)

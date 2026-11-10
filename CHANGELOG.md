@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-11-10 — W211 OBD app + K-line support
+
+- `mustang_obd` (Python and Android) now speaks **K-line and J1850** besides CAN: ISO 9141-2
+  and ISO 14230-4 KWP2000 replies (3-byte header + checksum, keyed by ECU address), VIN and
+  other Mode 09 items reassembled from numbered 4-byte messages, DTCs 3 per message,
+  protocol auto-detected (CAN-first default falls back to auto). CAN-only features
+  (multi-PID requests, Mode 06 decoding, Mode 22) are skipped on K-line.
+- New **W211 OBD** Android app for a 2005 Mercedes E220 CDI (W211): same codebase, built as a
+  separate APK (`dist/W211OBD.apk`, own app ID/name/colour/Download folder, installs next to
+  Mustang OBD). `dist/MustangOBD.apk` is version 1.1 (update over 1.0).
+  Python: `profile_w211_e220cdi_2005.json`, `--demo w211`.
+- Simulators (Python and Java) gained a W211 diesel on K-line (KWP2000 or ISO 9141-2).
+  Tests: Python 32, JVM ~47 000 checks incl. K-line parsing, CSV-header parity with the
+  Python tool on the W211, read-only audit of K-line sessions; Robolectric 48 (6 tests × 4
+  Android versions × 2 apps).
+
 ## 2026-11-08 — `mustang_obd` Android app
 
 - New **Android app** (`mustang_obd/android/`, APK in `dist/`, Android 6+): the OBD logger

@@ -1,0 +1,10 @@
+{
+  "vehicle": "2005 Mercedes-Benz E220 CDI (W211, OM646 diesel), EOBD via the OBD socket",
+  "notes": [
+    "Pre-2006 W211 engine ECUs typically answer generic EOBD over K-line (ISO 14230-4 KWP2000 or ISO 9141-2); the tool auto-detects the protocol (use --protocol 0, or let the default fall back).",
+    "Mercedes-specific data (injector quantity corrections, rail pressure target, boost target, glow plugs, gearbox) is NOT generic OBD: it needs Mercedes diagnostic sessions (KWP2000 services 0x10/0x21), which this read-only tool deliberately does not open. Only generic EOBD data is logged.",
+    "Typical diesel EOBD channels: rpm, speed, load, coolant, intake air temp, MAF, boost (MAP), common-rail pressure (PID 0x23), commanded EGR."
+  ],
+  "dids": [],
+  "ident_dids": []
+}

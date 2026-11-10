@@ -3,9 +3,9 @@
 mustang_obd.py - catch-all OBD-II data logger for a 2016 Ford Mustang 3.7 V6,
 over a Bluetooth (or USB / WiFi) ELM327-compatible adapter.
 
-Works on any CAN-bus OBD-II car (all US cars 2008+, most EU cars 2004+). The
-Mustang-specific part is only the optional enhanced-data profile
-(profile_mustang_2016_37.json).
+Works on any OBD-II / EOBD car: CAN (all US cars 2008+, most EU cars 2006+) and the
+older K-line / J1850 protocols (e.g. a 2005 Mercedes W211). The car-specific part is
+only the optional enhanced-data profile (profile_*.json).
 
 READ-ONLY BY DESIGN. Only these diagnostic services are ever sent:
   01 live data, 02 freeze frame, 03/07/0A stored/pending/permanent DTCs,
@@ -26,7 +26,7 @@ Connection (pick one; default is --bt):
   --rfcomm MAC         direct Bluetooth RFCOMM socket (no COM port needed)
   --ble [ADDRESS]      Bluetooth Low Energy adapter (needs: py -m pip install bleak)
   --tcp HOST:PORT      WiFi adapter (usually 192.168.0.10:35000)
-  --demo               built-in simulated Mustang - try everything without the car
+  --demo [w211]        built-in simulated car (Mustang on CAN, or W211 on K-line)
 
 Examples:
   py mustang_obd.py --demo --log --seconds 30
@@ -61,7 +61,7 @@ except ImportError:                    # only needed for COM-port transports
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(HERE, "logs")
 DEFAULT_PROFILE = os.path.join(HERE, "profile_mustang_2016_37.json")
-TOOL_VERSION = "1.0"
+TOOL_VERSION = "1.1"
 RECONNECT_DELAY = 2.0        # seconds before the first reconnect attempt (doubles, max 15)
 
 # =============================================================================
@@ -325,7 +325,38 @@ class Reply:
                 if len(m) >= 3 and m[0] == 0x7F and m[1] == service]
 
 
+def parse_legacy(lines):
+    """Non-CAN replies (ISO 9141-2, ISO 14230-4 KWP2000 'K-line', J1850) with headers on:
+    3 header bytes (format/priority, target, source), data, checksum. Keyed by the source
+    address (e.g. '10' = engine). KWP2000 carries the data length in the format byte."""
+    rep = Reply(lines)
+    for ln in lines:
+        s = ln.replace(" ", "").upper()
+        if not s or s.startswith("SEARCHING") or (s.startswith("BUSINIT") and "ERROR" not in s):
+            continue
+        if not set(s) <= _HEX or len(s) % 2 or len(s) < 10:
+            rep.status.append(ln.strip())
+            continue
+        b = bytes.fromhex(s)
+        fmt, src = b[0], b[2]
+        n = fmt & 0x3F
+        if fmt & 0x80 and n == 0 and len(b) >= 6:          # KWP2000 4-byte header (length byte)
+            data = b[4:4 + b[3]]
+        elif fmt & 0x80 and 3 + n <= len(b):                 # KWP2000, length in format byte
+            data = b[3:3 + n]
+        else:                                                # ISO 9141-2 / J1850: drop checksum
+            data = b[3:-1]
+        if data:
+            rep.msgs.setdefault(f"{src:02X}", []).append(data)
+        else:
+            rep.status.append(ln.strip())
+    return rep
+
+
 def parse_reply(lines, hdr_len=3):
+    """hdr_len: 3 = CAN 11-bit, 8 = CAN 29-bit, 0 = non-CAN (K-line / J1850)."""
+    if hdr_len == 0:
+        return parse_legacy(lines)
     rep = Reply(lines)
     pending = {}  # hdr -> [total_len, bytearray, next_sequence_number]
     for ln in lines:
@@ -388,6 +419,7 @@ class Elm327:
         self.proto_num = "?"
         self.proto_name = "?"
         self.hdr_len = 3
+        self.can = True
         self.can11 = True
         self.header = None
         self.cra = None
@@ -454,7 +486,8 @@ class Elm327:
         dpn = self.at("ATDPN")
         code = dpn[0][-1].upper() if dpn and dpn[0] else "?"
         self.proto_num = code
-        self.hdr_len = 8 if code in "79" else 3
+        self.can = code in "6789ABC"
+        self.hdr_len = (8 if code in "79" else 3) if self.can else 0
         self.can11 = code in "68"
         dp = self.at("ATDP")
         self.proto_name = dp[0] if dp else "?"
@@ -474,12 +507,9 @@ class Elm327:
         if not rep.positive(0x01):
             hexish = [s for s in rep.status if set(s.replace(" ", "").upper()) <= _HEX]
             if hexish:
-                sys.exit("The adapter answers without CAN headers (it ignores ATH1). This clone\n"
+                sys.exit("The adapter answers without headers (it ignores ATH1). This clone\n"
                          "is not supported - an ELM327 v1.4+/STN-based adapter is needed.")
             raise CarSilent(", ".join(rep.status) or "no answer")
-        if self.proto_num not in "6789":
-            sys.exit(f"Protocol {self.proto_name} is not CAN. This tool needs a CAN car "
-                     f"(the 2016 Mustang is CAN 11-bit 500k).")
         return rep
 
     def volts(self):
@@ -847,7 +877,7 @@ def probe_pids(elm, resp_hdr, pids):
 def multi_ok(elm, resp_hdr, pids, lengths):
     """Does this ECU answer multi-PID requests (up to 6 PIDs per request)?"""
     sample = [p for p in pids if p in lengths][:6]
-    if len(sample) < 2:
+    if len(sample) < 2 or not elm.can:
         return False
     target(elm, resp_hdr)
     rep = elm.obd("01" + "".join(f"{p:02X}" for p in sample))
@@ -861,12 +891,15 @@ def calibrate_count(elm, resp_hdr):
     """Find out if/how the adapter honours the trailing response-count digit,
     which saves the adapter's ~100-200 ms 'wait for more ECUs' timeout per request."""
     elm.count_mode = None
-    if not elm.can11:
+    if elm.can and not elm.can11:
         return None
     target(elm, resp_hdr)
     rep = elm.obd("0100", count=1)
     if not [m for h, m in rep.positive(0x01) if h == resp_hdr] or rep.partial:
         return None
+    if not elm.can:                  # K-line: every single-PID answer is one message
+        elm.count_mode = "sf"
+        return elm.count_mode
     ref = [m for h, m in elm.obd("0902").positive(0x09) if h == resp_hdr]
     if not ref or len(ref[0]) <= 7:
         elm.count_mode = "sf"
@@ -887,7 +920,9 @@ def calibrate_count(elm, resp_hdr):
 
 def read_did(elm, ecu_req, did, frames=None):
     """-> ('ok', data) | ('nrc', code) | ('none', status text)."""
-    elm.set_header(ecu_req if elm.can11 else None)
+    if not elm.can11:
+        return "none", "Mode 22 is only read on 11-bit CAN"
+    elm.set_header(ecu_req)
     resp = resp_for(ecu_req)
     count = elm.count_for(frames) if frames else (1 if elm.count_mode else None)
     nrcs, rep = [], None
@@ -949,12 +984,24 @@ def decode_mode09(info, m):
     return data.hex().upper()
 
 
+def mode09_message(rep, hdr, info, can=True):
+    """The Mode 09 answer of one ECU in CAN layout [49, info, count, data...]. Non-CAN
+    protocols send several numbered messages [49, info, seq, 4 bytes] - joined here."""
+    ms = [m for h, m in rep.positive(0x09) if h == hdr and len(m) >= 2 and m[1] == info]
+    if not ms:
+        return None
+    if can or info not in (0x02, 0x04, 0x06, 0x08, 0x0A, 0x0B):
+        return ms[0]
+    data = b"".join(bytes(m[3:]) for m in sorted(ms, key=lambda m: m[2] if len(m) > 2 else 0))
+    per = {0x04: 16, 0x06: 4, 0x08: 2, 0x0B: 2}.get(info)
+    count = max(1, len(data) // per) if per else 1
+    return bytes([0x49, info, count]) + data
+
+
 def read_vin(elm, resp_hdr):
     target(elm, resp_hdr)
-    for hdr, m in elm.obd("0902", timeout=6.0).positive(0x09):
-        if hdr == resp_hdr and len(m) > 3:
-            return decode_mode09(0x02, m)
-    return None
+    m = mode09_message(elm.obd("0902", timeout=6.0), resp_hdr, 0x02, elm.can)
+    return decode_mode09(0x02, m) if m and len(m) > 3 else None
 
 
 # Mode 06 (on-board monitor test results): unit-and-scaling IDs (SAE J1979 App. E).
@@ -1093,7 +1140,7 @@ def make_transport(args):
             return factory()
         sys.path.insert(0, HERE)
         from elm_sim import SimTransport
-        return SimTransport(latency=0.015)
+        return SimTransport(latency=0.015, vehicle=args.demo if isinstance(args.demo, str) else "mustang")
     if args.tcp:
         host, _, port = args.tcp.rpartition(":")
         return SocketTransport("tcp", (host or "192.168.0.10", int(port or 35000)))
@@ -1200,7 +1247,7 @@ def cmd_handshake(args):
 def pick_primary(sup):
     if not sup:
         return None
-    return max(sup, key=lambda h: (h == "7E8", len(sup[h])))
+    return max(sup, key=lambda h: (h in ("7E8", "10"), len(sup[h])))
 
 
 def cmd_snapshot(args, profile):
@@ -1233,9 +1280,9 @@ def cmd_snapshot(args, profile):
         target(elm, hdr)
         info_out = {}
         for info in infos:
-            for h, m in elm.obd(f"09{info:02X}", timeout=6.0).positive(0x09):
-                if h == hdr and len(m) >= 2 and m[1] == info:
-                    info_out[f"{info:02X}"] = decode_mode09(info, m)
+            m = mode09_message(elm.obd(f"09{info:02X}", timeout=6.0), hdr, info, elm.can)
+            if m:
+                info_out[f"{info:02X}"] = decode_mode09(info, m)
         snap["ecus"].setdefault(hdr, {})["mode09"] = info_out
     names = {"02": "VIN", "04": "CALID", "06": "CVN", "08": "InUsePerf", "0A": "EcuName"}
     for hdr, e in snap["ecus"].items():
@@ -1259,7 +1306,9 @@ def cmd_snapshot(args, profile):
         snap["ecus"].setdefault(hdr, {})["freeze_frame"] = ff
 
     print("  on-board monitor results (Mode 06, incl. per-cylinder misfire counts)...")
-    for hdr, mids in discover_bitmap(elm, 0x06).items():
+    if not elm.can:
+        snap["mode06_note"] = "Mode 06 is only decoded on CAN (K-line uses an older, different layout)"
+    for hdr, mids in (discover_bitmap(elm, 0x06) if elm.can else {}).items():
         target(elm, hdr)
         recs = []
         for mid in mids:
@@ -1333,6 +1382,9 @@ def render_snapshot(snap):
             L.append(f"  Mode 06 tests: {len(e['mode06'])} results, {len(fails)} outside limits"
                      + "".join(f"\n    FAIL {r['mid']}/{r['tid']} {r['mid_name']}: {fmt(r['value'])} "
                                f"not in [{fmt(r['min'])}, {fmt(r['max'])}] {r['unit']}" for r in fails))
+        L.append("")
+    if snap.get("mode06_note"):
+        L.append(f"Mode 06: {snap['mode06_note']}")
         L.append("")
     if snap.get("enhanced"):
         L.append("ENHANCED (Mode 22)")
@@ -1410,13 +1462,13 @@ def build_plan(elm, args, profile, extra_dids):
                 frames = frames_for(1 + sum(1 + L[p] for p in part))
                 dest.append(Item("pids", hdr, part, frames=frames))
 
-    if primary and elm.can11 and not args.no_count:
+    if primary and (elm.can11 or not elm.can) and not args.no_count:
         mode = calibrate_count(elm, primary)
         print(f"  response-count shortcut: {mode or 'not supported by this adapter'}")
 
     dids = []
     if not args.pids:
-        for e in profile["dids"] + extra_dids:
+        for e in (profile["dids"] + extra_dids) if elm.can11 else []:
             st, val = read_did(elm, e["ecu"], e["did"])
             if st == "ok":
                 dids.append(e)
@@ -1703,7 +1755,8 @@ def main():
     conn.add_argument("--ble", nargs="?", const="", metavar="ADDRESS",
                       help="Bluetooth Low Energy adapter (address optional: auto-scan)")
     conn.add_argument("--tcp", metavar="HOST:PORT", help="WiFi adapter, e.g. 192.168.0.10:35000")
-    conn.add_argument("--demo", action="store_true", help="simulated Mustang, no hardware")
+    conn.add_argument("--demo", nargs="?", const="mustang", choices=("mustang", "w211"),
+                      help="simulated car, no hardware: mustang (CAN, default) or w211 (K-line)")
     conn.add_argument("--protocol", default="6",
                       help="ELM protocol: 6 = CAN 11-bit 500k (Mustang, default), 0 = auto")
     lg = ap.add_argument_group("logging")

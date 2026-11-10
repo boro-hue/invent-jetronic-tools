@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Template: build_apk.sh replaces ${applicationId} per car variant (Mustang OBD / W211 OBD).
+     Component names are fully qualified because the Java package stays the same for every variant. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="io.github.borohue.mustangobd"
-    android:versionCode="1"
-    android:versionName="1.0">
+    android:versionCode="2"
+    android:versionName="1.1">
 
     <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="34" />
 
@@ -35,7 +37,7 @@
         android:theme="@android:style/Theme.DeviceDefault">
 
         <activity
-            android:name=".MainActivity"
+            android:name="io.github.borohue.mustangobd.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode">
@@ -46,13 +48,13 @@
         </activity>
 
         <service
-            android:name=".LoggerService"
+            android:name="io.github.borohue.mustangobd.LoggerService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
 
         <provider
-            android:name=".LogProvider"
-            android:authorities="io.github.borohue.mustangobd.logs"
+            android:name="io.github.borohue.mustangobd.LogProvider"
+            android:authorities="${applicationId}.logs"
             android:exported="false"
             android:grantUriPermissions="true" />
     </application>

@@ -9,8 +9,10 @@ import java.util.Locale;
 import java.util.TreeSet;
 
 /**
- * Demo mode: a simulated ELM327 adapter on a simulated 2016 Mustang (PCM 7E0/7E8 and a TCM
- * 7E1/7E9). Port of elm_sim.py. ALL VALUES ARE SYNTHETIC (VIN "SIMULATED0MUSTANG").
+ * Demo mode: a simulated ELM327 adapter on a simulated car. Port of elm_sim.py.
+ * "mustang": 2016 Mustang on CAN (PCM 7E0/7E8, TCM 7E1/7E9);
+ * "w211": 2005 W211 E220 CDI on K-line, ISO 14230-4 KWP2000 (engine ECU 0x10).
+ * ALL VALUES ARE SYNTHETIC (fake VINs "SIMULATED0MUSTANG" / "SIMULATED0W211E22").
  */
 public class SimTransport extends Transport {
     private final RxBuffer rx = new RxBuffer();
@@ -22,7 +24,13 @@ public class SimTransport extends Transport {
     public final List<String> sent = new ArrayList<String>();
     private volatile boolean closed;
 
-    static final String VIN = "SIMULATED0MUSTANG";
+    final boolean w211;
+    /** W211 only: answer as ISO 9141-2 (48 6B header) instead of KWP2000 */
+    public boolean iso9141;
+    final String vin;
+    final int[] pcmPids, freeze;
+    static final int[] W211_PIDS = {0x01, 0x04, 0x05, 0x0B, 0x0C, 0x0D, 0x0F, 0x10, 0x11, 0x1C, 0x1F, 0x21, 0x23,
+            0x2C, 0x30, 0x31, 0x33};
     static final int[] PCM_PIDS = {0x01, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
             0x10, 0x11, 0x13, 0x15, 0x19, 0x1C, 0x1F, 0x21, 0x2E, 0x2F, 0x30, 0x31, 0x32, 0x33, 0x34, 0x38, 0x3C,
             0x3D, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x49, 0x4A, 0x4C, 0x4D, 0x4E, 0x51};
@@ -31,6 +39,14 @@ public class SimTransport extends Transport {
     static final int[] MISFIRES = {0, 1, 37, 0, 2, 0};
 
     public SimTransport() {
+        this("mustang");
+    }
+
+    public SimTransport(String vehicle) {
+        w211 = "w211".equals(vehicle);
+        vin = w211 ? "SIMULATED0W211E22" : "SIMULATED0MUSTANG";
+        pcmPids = w211 ? W211_PIDS : PCM_PIDS;
+        freeze = w211 ? new int[]{0x02, 0x05, 0x0C, 0x0D} : FREEZE;
         reset();
     }
 
@@ -45,7 +61,7 @@ public class SimTransport extends Transport {
 
     @Override
     public String name() {
-        return "Demo (simulated Mustang - synthetic data)";
+        return w211 ? "Demo (simulated W211 E220 CDI - synthetic data)" : "Demo (simulated Mustang - synthetic data)";
     }
 
     @Override
@@ -113,8 +129,10 @@ public class SimTransport extends Transport {
         if (c.equals("I")) return Arrays.asList("ELM327 v1.5");
         if (c.equals("RV")) return Arrays.asList("14.2V");
         boolean auto = protocol.equals("0") || protocol.startsWith("A");
-        if (c.equals("DPN")) return Arrays.asList((auto ? "A" : "") + "6");
-        if (c.equals("DP")) return Arrays.asList((auto ? "AUTO, " : "") + "ISO 15765-4 (CAN 11/500)");
+        String proto = !w211 ? "6" : iso9141 ? "3" : "5";
+        if (c.equals("DPN")) return Arrays.asList((auto ? "A" : "") + proto);
+        if (c.equals("DP")) return Arrays.asList((auto ? "AUTO, " : "") + (proto.equals("3") ? "ISO 9141-2"
+                : proto.equals("5") ? "ISO 14230-4 (KWP FAST)" : "ISO 15765-4 (CAN 11/500)"));
         if (c.equals("E0")) echo = false;
         else if (c.equals("E1")) echo = true;
         else if (c.equals("S0")) spaces = false;
@@ -139,8 +157,22 @@ public class SimTransport extends Transport {
         }
         byte[] req = Elm.hex(cmd);
         List<String> lines = new ArrayList<String>();
-        if (!connected && (protocol.equals("0") || protocol.startsWith("A"))) lines.add("SEARCHING...");
+        boolean auto = protocol.equals("0") || protocol.startsWith("A");
+        if (w211 && !auto && !protocol.matches("[345]")) return Arrays.asList("CAN ERROR");   // car is on K-line
+        if (!connected && auto) lines.add("SEARCHING...");
+        else if (!connected && w211) lines.add("BUS INIT: ...OK");
         connected = true;
+        if (w211) {
+            if (req[0] == 0x01 && req.length > 2) {                  // multi-PID requests are CAN-only
+                lines.add("NO DATA");
+                return lines;
+            }
+            byte[] r = respond(true, req);
+            List<byte[]> msgs = r == null ? new ArrayList<byte[]>() : legacySplit(r);
+            for (int i = 0; i < msgs.size() && (count == 0 || i < count); i++) lines.add(legacyFmt("10", msgs.get(i)));
+            if (msgs.isEmpty()) lines.add("NO DATA");
+            return lines;
+        }
         List<String[]> ecus = new ArrayList<String[]>();
         if (header.equals("7DF") || header.equals("7E0")) ecus.add(new String[]{"7E8", "pcm"});
         if (header.equals("7DF") || header.equals("7E1")) ecus.add(new String[]{"7E9", "tcm"});
@@ -164,6 +196,47 @@ public class SimTransport extends Transport {
             if (!any) break;
         }
         return lines;
+    }
+
+    /** J1979 non-CAN layout: Mode 09 items in numbered 4-byte messages, DTCs 3 per message. */
+    private static List<byte[]> legacySplit(byte[] r) {
+        List<byte[]> out = new ArrayList<byte[]>();
+        int sid = r[0] & 0xFF;
+        if (sid == 0x49 && r.length > 3 && (r[1] == 0x02 || r[1] == 0x04 || r[1] == 0x06 || r[1] == 0x0A)) {
+            byte[] data = Arrays.copyOfRange(r, 3, r.length);
+            byte[] padded = new byte[(data.length + 3) / 4 * 4];
+            System.arraycopy(data, 0, padded, padded.length - data.length, data.length);
+            for (int i = 0; i < padded.length; i += 4)
+                out.add(cat(b(0x49, r[1], i / 4 + 1), Arrays.copyOfRange(padded, i, i + 4)));
+            return out;
+        }
+        if (sid == 0x43 || sid == 0x47 || sid == 0x4A) {
+            byte[] codes = Arrays.copyOfRange(r, 2, r.length);
+            byte[] padded = new byte[Math.max(6, (codes.length + 5) / 6 * 6)];
+            System.arraycopy(codes, 0, padded, 0, codes.length);
+            for (int i = 0; i < padded.length; i += 6) out.add(cat(b(sid), Arrays.copyOfRange(padded, i, i + 6)));
+            return out;
+        }
+        out.add(r);
+        return out;
+    }
+
+    private String legacyFmt(String src, byte[] m) {
+        byte[] all = m;
+        if (headers) {
+            byte[] head = iso9141 ? b(0x48, 0x6B, Integer.parseInt(src, 16))
+                    : b(0x80 | m.length, 0xF1, Integer.parseInt(src, 16));
+            all = cat(head, m, new byte[1]);
+            int sum = 0;
+            for (int i = 0; i < all.length - 1; i++) sum += all[i] & 0xFF;
+            all[all.length - 1] = (byte) sum;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (byte x : all) {
+            if (sb.length() > 0 && spaces) sb.append(' ');
+            sb.append(String.format(Locale.US, "%02X", x & 0xFF));
+        }
+        return sb.toString();
     }
 
     private List<String> frames(String hdr, byte[] p) {
@@ -247,7 +320,7 @@ public class SimTransport extends Transport {
 
     private byte[] respond(boolean pcm, byte[] req) {
         int sid = req[0] & 0xFF;
-        int[] pids = pcm ? PCM_PIDS : TCM_PIDS;
+        int[] pids = pcm ? pcmPids : TCM_PIDS;
         if (sid == 0x01) {
             if (req.length < 2 || req.length > 7) return null;
             ByteArrayOutputStream o = new ByteArrayOutputStream();
@@ -264,9 +337,15 @@ public class SimTransport extends Transport {
         }
         if (sid == 0x02 && pcm && req.length >= 3 && req[2] == 0) {
             int p = req[1] & 0xFF;
-            byte[] v = p % 0x20 == 0 ? bitmap(FREEZE, p) : !has(FREEZE, p) ? null
-                    : p == 0x02 ? b(0x03, 0x03) : pid(p, true);
+            byte[] v = p % 0x20 == 0 ? bitmap(freeze, p) : !has(freeze, p) ? null
+                    : p == 0x02 ? (w211 ? b(0x04, 0x01) : b(0x03, 0x03)) : pid(p, true);
             return v == null ? null : cat(b(0x42, p, 0), v);
+        }
+        if (w211) {
+            if (sid == 0x03) return b(0x43, 2, 0x04, 0x01, 0x06, 0x70);
+            if (sid == 0x07) return b(0x47, 0);
+            if (sid == 0x0A) return null;                           // not supported on this car
+            if (sid == 0x06) return null;
         }
         if (sid == 0x03) return pcm ? b(0x43, 1, 0x03, 0x03) : b(0x43, 0);
         if (sid == 0x07) return pcm ? b(0x47, 1, 0x01, 0x71) : b(0x47, 0);
@@ -289,25 +368,26 @@ public class SimTransport extends Transport {
         }
         if (sid == 0x09 && req.length == 2) {
             int info = req[1] & 0xFF;
-            int[] infos = pcm ? new int[]{0x02, 0x04, 0x06, 0x0A} : new int[]{0x0A};
+            int[] infos = w211 ? new int[]{0x02, 0x04} : pcm ? new int[]{0x02, 0x04, 0x06, 0x0A} : new int[]{0x0A};
             if (info % 0x20 == 0) {
                 byte[] bm = bitmap(infos, info);
                 return bm == null ? null : cat(b(0x49, info), bm);
             }
             if (!has(infos, info)) return null;
-            if (info == 0x02) return cat(b(0x49, 2, 1), VIN.getBytes(Elm.ASCII));
-            if (info == 0x04) return cat(b(0x49, 4, 1), pad("SIMCAL-PCM-0001", 16));
+            if (info == 0x02) return cat(b(0x49, 2, 1), vin.getBytes(Elm.ASCII));
+            if (info == 0x04) return cat(b(0x49, 4, 1), pad(w211 ? "SIMCAL-CDI-0001" : "SIMCAL-PCM-0001", 16));
             if (info == 0x06) return b(0x49, 6, 1, 0x1A, 0x2B, 0x3C, 0x4D);
             return cat(b(0x49, 0x0A, 1), pad(pcm ? "ECM\0-EngineControl" : "TCM\0-TransmissionCtrl", 20));
         }
         if (sid == 0x22 && req.length == 3) {
             int did = ((req[1] & 0xFF) << 8) | (req[2] & 0xFF);
             byte[] v = null;
+            if (w211) return b(0x7F, 0x22, 0x11);
             if (pcm && did == 0x1E1C) {
                 int raw = (int) Math.round(Math.min(85.0, 40.0 + t() * 0.4) * 16);
                 v = b(raw >> 8, raw);
             } else if (pcm && did == 0xDD01) v = b(0x01, 0xE2, 0x40);
-            else if (pcm && did == 0xF190) v = VIN.getBytes(Elm.ASCII);
+            else if (pcm && did == 0xF190) v = vin.getBytes(Elm.ASCII);
             else if (pcm && did == 0xF188) v = "SIM-STRATEGY-01".getBytes(Elm.ASCII);
             return v == null ? b(0x7F, 0x22, 0x31) : cat(b(0x62, req[1] & 0xFF, req[2] & 0xFF), v);
         }
@@ -317,7 +397,17 @@ public class SimTransport extends Transport {
     private byte[] pid(int p, boolean frozen) {
         double t = t();
         double drive = t > 5 ? 0.5 - 0.5 * Math.cos(2 * Math.PI * t / 20) : 0;
-        double rpm = frozen ? 2050 : 750 + 2600 * drive;
+        double rpm = frozen ? 2050 : (w211 ? 760 + 2900 * drive : 750 + 2600 * drive);
+        if (w211) {
+            switch (p) {
+                case 0x01: return b(0x01, 0x04, 0x00, 0x00);
+                case 0x0B: return b((int) (100 + 115 * drive));
+                case 0x1C: return b(0x06);
+                case 0x23: return u16((280 + 1050 * drive) * 10);
+                case 0x2C: return b(pct(40 * (1 - drive)));
+                default: break;
+            }
+        }
         double speed = frozen ? 64 : Math.max(0, (rpm - 750) / 26);
         double ect = frozen ? 88 : Math.min(90, 45 + t * 0.6);
         double load = frozen ? 47 : 18 + 55 * drive;

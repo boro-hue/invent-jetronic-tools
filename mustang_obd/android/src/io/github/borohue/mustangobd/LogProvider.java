@@ -13,10 +13,9 @@ import java.io.FileNotFoundException;
 
 /** Read-only sharing of log files kept in the app's own folder (Android 9 and older). */
 public class LogProvider extends ContentProvider {
-    public static final String AUTHORITY = "io.github.borohue.mustangobd.logs";
-
-    public static Uri uriFor(String fileName) {
-        return Uri.parse("content://" + AUTHORITY + "/" + Uri.encode(fileName));
+    /** authority = applicationId + ".logs" (each car variant has its own applicationId) */
+    public static Uri uriFor(android.content.Context ctx, String fileName) {
+        return Uri.parse("content://" + ctx.getPackageName() + ".logs/" + Uri.encode(fileName));
     }
 
     private File file(Uri uri) throws FileNotFoundException {

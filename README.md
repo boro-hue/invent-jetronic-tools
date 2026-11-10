@@ -12,7 +12,7 @@ Unofficial, community-made logging and reverse-engineering tools for the **Inven
 - `docs/` — the reverse-engineered protocol and channel map, a Bluetooth guide, a detailed write-up of a firmware-migration bug, flash-hygiene working habits, M103 conversion field notes, and the exact vehicle setup everything was verified on.
 - `re-tools/` — the toolkit that was used to decode the protocol, so you can verify or extend the channel map for your own firmware and engine.
 - `samples/` — the road-verified reference map for an M103 + 190 cc install, the same changes as an apply-it-yourself patch, and a complete example log from the documented car.
-- `mustang_obd/` — a separate, unrelated tool: a read-only catch-all **OBD-II** logger for a Bluetooth ELM327 adapter, written for a 2016 Ford Mustang 3.7 V6 (works on any CAN OBD-II car). See [mustang_obd/README.md](mustang_obd/README.md); also available as an **Android app** ([mustang_obd/android/](mustang_obd/android/README.md)).
+- `mustang_obd/` — a separate, unrelated tool: a read-only catch-all **OBD-II** logger for a Bluetooth ELM327 adapter, written for a 2016 Ford Mustang 3.7 V6 (works on any CAN OBD-II car). Also speaks K-line for older cars (e.g. a 2005 Mercedes W211 E220 CDI). See [mustang_obd/README.md](mustang_obd/README.md); also available as **Android apps** ([mustang_obd/android/](mustang_obd/android/README.md)).
 
 The vendor's Commander app remains the tool for viewing and changing settings and for flashing. These tools fill one gap: **reliable, gap-free logging while driving**, plus public documentation of how the ECU talks.
 
@@ -119,7 +119,7 @@ If you have already updated: read the ECU back with Commander and compare the mi
 | `re-tools/` | The reverse-engineering toolkit used to build the channel map — USB sniffing procedure (`SNIFFING.md`, `capture_combo.ps1`), pcap/frame decoding (`decode_pcap.py`, `analyze_frames.py`, `split_frames.py`), and regression tools that map raw bytes to Commander channels (`align_decode.py`, `validate_decode.py`, `decode_live.py`). Use these to verify or extend the map for other firmwares and engines. |
 | `drafts/` | Reusable write-ups: the vendor bug report template and a forum announcement post. |
 | `mustang_obd/` | Not Jetronic-related: read-only OBD-II logger for Bluetooth/USB/WiFi/BLE ELM327 adapters (2016 Mustang 3.7 profile), with a built-in simulator and tests. |
-| `mustang_obd/android/` | The same logger as an Android app (APK in `dist/`, built without Android Studio by `build_apk.sh`; JVM + Robolectric tests). |
+| `mustang_obd/android/` | The same logger as Android apps — *Mustang OBD* and *W211 OBD* (APKs in `dist/`, built without Android Studio by `build_apk.sh`; JVM + Robolectric tests). |
 
 ## Compatibility (the honest version)
 

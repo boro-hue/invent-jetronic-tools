@@ -17,6 +17,8 @@ public class Snapshot {
     public Map<String, Object> snap;
     public String text;
     public String jsonName, txtName;
+    public List<Obd.Did> profile = Obd.PROFILE;   // enhanced (Mode 22) identifiers for this car
+    public String toolName = "Mustang OBD (Android)";
 
     public Snapshot(Session sess, Session.Sink sink) {
         this.sess = sess;
@@ -49,7 +51,7 @@ public class Snapshot {
             ui.message("Connected: " + elm.version + " via " + elm.t.name() + ", " + elm.protoName);
             snap = new LinkedHashMap<String, Object>();
             snap.put("created", new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(new Date()));
-            snap.put("tool", "Mustang OBD (Android) " + BuildInfo.VERSION);
+            snap.put("tool", toolName + " " + BuildInfo.VERSION);
             Map<String, Object> ad = new LinkedHashMap<String, Object>();
             ad.put("transport", elm.t.name());
             ad.put("adapter", elm.version);
@@ -93,9 +95,9 @@ public class Snapshot {
                 Obd.target(elm, hdr);
                 Map<String, Object> info = new LinkedHashMap<String, Object>();
                 for (int it : e.getValue()) {
-                    byte[] m = elm.obd(String.format(Locale.US, "09%02X", it), 6000, 0).positiveFrom(0x09, hdr);
-                    if (m != null && m.length >= 2 && (m[1] & 0xFF) == it)
-                        info.put(String.format(Locale.US, "%02X", it), Obd.decodeMode09(it, m));
+                    byte[] m = Obd.mode09Message(elm.obd(String.format(Locale.US, "09%02X", it), 6000, 0), hdr,
+                            it, elm.can);
+                    if (m != null) info.put(String.format(Locale.US, "%02X", it), Obd.decodeMode09(it, m));
                 }
                 Map<String, Object> en = ecu(ecus, hdr);
                 en.put("mode09", info);
@@ -126,7 +128,11 @@ public class Snapshot {
             }
 
             ui.status("Snapshot: monitor results / misfire counts (Mode 06)...");
-            for (Map.Entry<String, List<Integer>> e : Obd.discover(elm, 0x06, "").entrySet()) {
+            if (!elm.can)
+                snap.put("mode06_note", "Mode 06 is only decoded on CAN (K-line uses an older, different layout)");
+            Map<String, List<Integer>> mids = elm.can ? Obd.discover(elm, 0x06, "")
+                    : new java.util.TreeMap<String, List<Integer>>();
+            for (Map.Entry<String, List<Integer>> e : mids.entrySet()) {
                 String hdr = e.getKey();
                 Obd.target(elm, hdr);
                 List<Map<String, Object>> recs = new ArrayList<Map<String, Object>>();
@@ -141,7 +147,7 @@ public class Snapshot {
             if (elm.can11 && primary != null) Obd.calibrateCount(elm, primary);
             Map<String, Object> enh = new LinkedHashMap<String, Object>();
             List<Obd.Did> all = new ArrayList<Obd.Did>(Obd.IDENT);
-            all.addAll(Obd.PROFILE);
+            all.addAll(profile);
             for (Obd.Did d : elm.can11 ? all : new ArrayList<Obd.Did>()) {
                 Object[] r = Obd.readDid(elm, d.ecu, d.did, 0);
                 Map<String, Object> x = new LinkedHashMap<String, Object>();
@@ -240,6 +246,7 @@ public class Snapshot {
             }
             L.append("\n");
         }
+        if (snap.get("mode06_note") != null) L.append("Mode 06: ").append(snap.get("mode06_note")).append("\n\n");
         Map<String, Object> enh = (Map<String, Object>) snap.get("enhanced");
         if (enh != null && !enh.isEmpty()) {
             L.append("ENHANCED (Mode 22)\n");

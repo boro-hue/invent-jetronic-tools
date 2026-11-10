@@ -100,6 +100,14 @@ class TestReadOnlyGuard(unittest.TestCase):
             quiet(M.cmd_snapshot, args, profile)
             quiet(M.cmd_log, args, profile)
             quiet(M.cmd_scan, make_args(sim_factory=factory, scan_dids="4200-4300"))
+
+            def w211():
+                t = elm_sim.SimTransport(vehicle="w211")
+                transports.append(t)
+                return t
+            args = make_args(sim_factory=w211, seconds=1.0)
+            quiet(M.cmd_snapshot, args, profile)
+            quiet(M.cmd_log, args, profile)
         finally:
             M.LOG_DIR = old
             shutil.rmtree(tmp, ignore_errors=True)
@@ -178,6 +186,28 @@ class TestParse(unittest.TestCase):
     def test_negative_response(self):
         rep = M.parse_reply(["7E8 03 7F 22 31"])
         self.assertEqual(rep.negative(0x22), [("7E8", 0x31)])
+
+    def test_kline_kwp2000_and_iso9141(self):
+        # KWP2000: format byte 0x80|len, target F1, source 10, data, checksum
+        rep = M.parse_reply(["84 F1 10 41 0C 0B E0 BD", "BUS INIT: ...OK"], hdr_len=0)
+        self.assertEqual(rep.positive(1), [("10", bytes.fromhex("410C0BE0"))])
+        # ISO 9141-2: 48 6B source, data, checksum (no length in the header)
+        rep = M.parse_reply(["486B10410C0BE0FB"], hdr_len=0)
+        self.assertEqual(rep.positive(1), [("10", bytes.fromhex("410C0BE0"))])
+        # KWP2000 with a separate length byte (4-byte header)
+        rep = M.parse_reply(["80 F1 10 03 41 0D 32 F9"], hdr_len=0)
+        self.assertEqual(rep.positive(1), [("10", bytes.fromhex("410D32"))])
+        for line in ("NO DATA", "BUS INIT: ...ERROR", "?"):
+            self.assertEqual(M.parse_reply([line], hdr_len=0).status, [line])
+
+    def test_kline_vin_and_dtcs_in_several_messages(self):
+        lines = ["87 F1 10 49 02 03 41 54 45 44 F4", "87 F1 10 49 02 01 00 00 00 53 27",
+                 "87 F1 10 49 02 02 49 4D 55 4C 0C", "87 F1 10 49 02 04 30 57 32 31 C1",
+                 "87 F1 10 49 02 05 31 45 32 32 B2"]
+        m = M.mode09_message(M.parse_reply(lines, hdr_len=0), "10", 0x02, can=False)
+        self.assertEqual(M.decode_mode09(0x02, m), "SIMULATED0W211E22")
+        rep = M.parse_reply(["87 F1 10 43 04 01 06 70 00 00 46"], hdr_len=0)
+        self.assertEqual(M.parse_dtcs(rep.positive(3)[0][1]), ["P0401", "P0670"])
 
     def test_multi_pid_split_ignores_unrequested_bytes(self):
         lengths = {0x0C: 2, 0x0D: 1, 0x05: 1}
@@ -262,6 +292,33 @@ class TestEndToEnd(TempLogDir):
                 self.assertGreater(len(rows), 5)
                 self.assertNotEqual(rows[-1]["Rpm"], "")
                 self.assertNotEqual(rows[-1]["TransFluidTemp_C"], "")
+
+    def test_w211_kline_log(self):
+        for quirks in ((), {"iso9141"}):
+            with self.subTest(quirks=str(quirks)):
+                rows, out = self.run_log(seconds=2.0, vehicle="w211", quirks=quirks)
+                self.assertGreater(len(rows), 10)
+                last = rows[-1]
+                for col in ("Rpm", "Speed_kmh", "Coolant_C", "MAP_kPa", "MAF_gs", "FuelRailGauge_kPa",
+                            "CmdEGR_pct", "AdapterVolts_V", "raw_0123"):
+                    self.assertNotEqual(last.get(col, ""), "", col)
+                self.assertFalse([c for c in last if c.startswith("7E") or "TransFluid" in c])
+                self.assertEqual(int(last["raw_0123"], 16) * 10, int(float(last["FuelRailGauge_kPa"])))
+                meta = read(self.newest("mustang_*.meta.json"))
+                self.assertIn("SIMULATED0W211E22", meta)
+                self.assertIn("ISO 9141-2" if quirks else "KWP", meta)
+
+    def test_w211_snapshot(self):
+        args = make_args(sim_factory=lambda: elm_sim.SimTransport(vehicle="w211"))
+        quiet(M.cmd_snapshot, args, M.load_profile(os.path.join(M.HERE, "profile_w211_e220cdi_2005.json")))
+        snap = json.loads(read(self.newest("mustang_snapshot_*.json")))
+        ecu = snap["ecus"]["10"]
+        self.assertEqual(ecu["VIN"], "SIMULATED0W211E22")
+        self.assertEqual(ecu["CALID"], ["SIMCAL-CDI-0001"])
+        self.assertEqual(snap["dtcs"]["stored"]["10"], ["P0401", "P0670"])
+        self.assertEqual(ecu["freeze_frame"]["02"]["values"]["FreezeDTC"], "P0401")
+        self.assertIn("mode06_note", snap)
+        self.assertEqual(ecu["live"]["23"]["values"]["FuelRailGauge_kPa"], 28000)
 
     def test_count_calibration(self):
         for sem, want in (("messages", "messages"), ("frames", "frames"), ("ignore", "messages")):

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-elm_sim.py - a simulated ELM327 adapter plugged into a simulated 2016 Mustang
-(PCM at 7E0/7E8 and a TCM at 7E1/7E9) for `mustang_obd.py --demo` and the tests.
+elm_sim.py - a simulated ELM327 adapter plugged into a simulated car, for
+`mustang_obd.py --demo` and the tests:
+  vehicle="mustang": 2016 Mustang on CAN (PCM at 7E0/7E8, a TCM at 7E1/7E9)
+  vehicle="w211":    2005 W211 E220 CDI on K-line, ISO 14230-4 KWP2000 (engine ECU 0x10)
 
 ALL VALUES ARE SYNTHETIC. The VIN is deliberately fake ("SIMULATED0MUSTANG")
 and the Mode 22 identifiers below are made up for exercising the code paths -
@@ -40,7 +42,8 @@ class SimEcu:
                  freeze=(), mode06=None, dids=None):
         self.car = car
         self.pids = set(pids)
-        self.dtcs, self.pending, self.permanent = list(dtcs), list(pending), list(permanent)
+        self.dtcs, self.pending = list(dtcs), list(pending)
+        self.permanent = None if permanent is None else list(permanent)
         self.mode09 = mode09 or {}
         self.freeze = set(freeze)
         self.mode06 = mode06 or {}
@@ -81,14 +84,15 @@ class SimEcu:
                 return bytes([0x42, pid, 0] + list(bm)) if bm else None
             if pid not in self.freeze:
                 return None
-            data = bytes([0x03, 0x03]) if pid == 0x02 else self.car.pid(pid, frozen=True)
+            data = (bytes(self._dtc_bytes(self.dtcs[0])) if self.dtcs else bytes(2)) if pid == 0x02 \
+                else self.car.pid(pid, frozen=True)
             return bytes([0x42, pid, 0]) + data
         if sid == 0x03:
             return self._dtc_reply(0x03, self.dtcs)
         if sid == 0x07:
             return self._dtc_reply(0x07, self.pending)
         if sid == 0x0A:
-            return self._dtc_reply(0x0A, self.permanent)
+            return None if self.permanent is None else self._dtc_reply(0x0A, self.permanent)
         if sid == 0x06 and len(req) == 2:
             mid = req[1]
             if mid % 0x20 == 0:
@@ -120,11 +124,24 @@ class SimEcu:
 class SimCar:
     VIN = "SIMULATED0MUSTANG"
 
-    def __init__(self, clock=time.monotonic):
+    def __init__(self, clock=time.monotonic, vehicle="mustang"):
         self.clock = clock
         self.t0 = clock()
         self.forced_offline = False
         self.offline_windows = []    # [(t_from, t_to)] seconds since start: "ignition off"
+        self.vehicle = vehicle
+        self.legacy = vehicle == "w211"   # K-line instead of CAN
+        if vehicle == "w211":
+            self.VIN = "SIMULATED0W211E22"
+            self.pcm = SimEcu(
+                self, [0x01, 0x04, 0x05, 0x0B, 0x0C, 0x0D, 0x0F, 0x10, 0x11, 0x1C, 0x1F, 0x21, 0x23,
+                       0x2C, 0x30, 0x31, 0x33],
+                dtcs=["P0401", "P0670"], pending=[], permanent=None,
+                mode09={0x02: b"\x01" + self.VIN.encode(),
+                        0x04: b"\x01" + b"SIMCAL-CDI-0001".ljust(16, b"\x00")},
+                freeze=[0x02, 0x05, 0x0C, 0x0D])
+            self.tcm = None
+            return
         pcm_pids = [0x01, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0B, 0x0C, 0x0D, 0x0E,
                     0x0F, 0x10, 0x11, 0x13, 0x15, 0x19, 0x1C, 0x1F, 0x21, 0x2E, 0x2F, 0x30,
                     0x31, 0x32, 0x33, 0x34, 0x38, 0x3C, 0x3D, 0x41, 0x42, 0x43, 0x44, 0x45,
@@ -169,7 +186,10 @@ class SimCar:
         t = self.t()
         drive = 0.5 - 0.5 * math.cos(2 * math.pi * t / 20) if t > 5 else 0.0
         rpm = 750 + 2600 * drive
+        if self.vehicle == "w211":
+            rpm = 760 + 2900 * drive
         return {
+            "rail_bar": 280 + 1050 * drive, "boost_kpa": 100 + 115 * drive, "egr": 40 * (1 - drive),
             "rpm": rpm, "speed": max(0, (rpm - 750) / 26), "ect": min(90, 45 + t * 0.6),
             "load": 18 + 55 * drive, "tps": 12 + 40 * drive, "map": 30 + 60 * drive,
             "maf": 3.2 + 75 * drive, "stft1": 2.5 * math.sin(t * 1.7),
@@ -201,11 +221,16 @@ class SimCar:
             0x45: [pct(s["tps"] - 10)], 0x46: [18 + 40], 0x47: [pct(s["tps"] + 2)],
             0x49: [pct(s["tps"] + 5)], 0x4A: [pct(s["tps"] / 2 + 3)], 0x4C: [pct(s["tps"])],
             0x4D: [0, 0], 0x4E: u16(5130), 0x51: [0x01],
+            0x23: u16(s["rail_bar"] * 10), 0x2C: [pct(s["egr"])],
             0xA4: [0x01, (1 + int(s["speed"] // 25)) << 4] + u16(4171 // (1 + int(s["speed"] // 25))),
         }
+        if self.vehicle == "w211":
+            table.update({0x0B: [int(s["boost_kpa"])], 0x1C: [0x06], 0x01: [0x01, 0x04, 0x00, 0x00]})
         return bytes(table[p])
 
     def ecus(self, header):
+        if self.legacy:               # K-line: one engine ECU, functional addressing only
+            return [("10", self.pcm)]
         h = header.upper()
         if h == "7DF":
             return [("7E8", self.pcm), ("7E9", self.tcm)]
@@ -220,11 +245,14 @@ class SimElm327:
     """count_semantics: how the trailing response-count digit is honoured -
     'messages' (count ISO-TP messages), 'frames' (count CAN frames) or 'ignore'."""
 
-    def __init__(self, car=None, count_semantics="messages", interleave=True, quirks=()):
-        self.car = car or SimCar()
+    def __init__(self, car=None, count_semantics="messages", interleave=True, quirks=(),
+                 vehicle="mustang"):
+        self.car = car or SimCar(vehicle=vehicle)
         self.count_semantics = count_semantics
         self.interleave = interleave
-        self.quirks = set(quirks)    # "no_s0": ignores ATS0, "no_h1": ignores ATH1 (bad clones)
+        # "no_s0": ignores ATS0, "no_h1": ignores ATH1 (bad clones);
+        # "iso9141": K-line car answers as ISO 9141-2 (48 6B header) instead of KWP2000
+        self.quirks = set(quirks)
         self._defaults()
 
     def _defaults(self):
@@ -256,11 +284,12 @@ class SimElm327:
             return ["OBDII to RS232 Interpreter"]
         if c == "RV":
             return ["14.2V" if self.car.online else "12.4V"]
+        auto = self.protocol.startswith("A") or self.protocol == "0"
         if c == "DPN":
-            return [("A" if self.protocol.startswith("A") or self.protocol == "0" else "") + "6"]
+            return [("A" if auto else "") + self._proto()]
         if c == "DP":
-            return [("AUTO, " if self.protocol in ("0",) or self.protocol.startswith("A") else "")
-                    + "ISO 15765-4 (CAN 11/500)"]
+            name = {"3": "ISO 9141-2", "5": "ISO 14230-4 (KWP FAST)"}.get(self._proto(), "ISO 15765-4 (CAN 11/500)")
+            return [("AUTO, " if auto else "") + name]
         flags = {"E0": ("echo", False), "E1": ("echo", True), "L0": ("linefeed", False),
                  "L1": ("linefeed", True), "S0": ("spaces", False), "S1": ("spaces", True),
                  "H0": ("headers", False), "H1": ("headers", True)}
@@ -278,6 +307,32 @@ class SimElm327:
         if c in ("AT0", "AT1", "AT2", "CAF0", "CAF1", "AL", "CFC1") or c.startswith(("ST", "CRA")):
             return ["OK"]
         return ["?"]
+
+    def _proto(self):
+        if not self.car.legacy:
+            return "6"
+        return "3" if "iso9141" in self.quirks else "5"
+
+    def _legacy_split(self, r):
+        """J1979 non-CAN layout: Mode 09 items in numbered 4-byte messages, DTCs 3 per message."""
+        if r[0] == 0x49 and len(r) > 3 and r[1] in (0x02, 0x04, 0x06, 0x0A):
+            data = bytes(r[3:])
+            data = bytes(-len(data) % 4) + data
+            return [bytes([0x49, r[1], i // 4 + 1]) + data[i:i + 4] for i in range(0, len(data), 4)]
+        if r[0] in (0x43, 0x47, 0x4A):
+            codes = bytes(r[2:])
+            codes += bytes(-len(codes) % 6 or (6 if not codes else 0))
+            return [bytes([r[0]]) + codes[i:i + 6] for i in range(0, len(codes), 6)]
+        return [r]
+
+    def _legacy_fmt(self, src, m):
+        if self.headers:
+            head = [0x48, 0x6B, int(src, 16)] if "iso9141" in self.quirks else [0x80 | len(m), 0xF1, int(src, 16)]
+            b = bytes(head) + m
+            b += bytes([sum(b) & 0xFF])
+        else:
+            b = m
+        return (" " if self.spaces else "").join(f"{x:02X}" for x in b)
 
     def _fmt(self, hdr, data):
         hexes = [f"{b:02X}" for b in data]
@@ -304,11 +359,27 @@ class SimElm327:
             count, cmd = int(cmd[-1], 16), cmd[:-1]
         req = bytes.fromhex(cmd)
         lines = []
-        if not self.connected and (self.protocol == "0" or self.protocol.startswith("A")):
+        auto = self.protocol == "0" or self.protocol.startswith("A")
+        if self.car.legacy and not auto and self.protocol not in ("3", "4", "5"):
+            return ["CAN ERROR"]                     # client insists on CAN: car is on K-line
+        if not self.connected and auto:
             lines.append("SEARCHING...")
+        elif not self.connected and self.car.legacy:
+            lines.append("BUS INIT: ...OK")
         if not self.car.online:
             return lines + (["UNABLE TO CONNECT"] if lines else ["NO DATA"])
         self.connected = True
+        if self.car.legacy:
+            if req[0] == 0x01 and len(req) > 2:      # multi-PID requests are CAN-only
+                return lines + ["NO DATA"]
+            msgs = []
+            for hdr, ecu in self.car.ecus(self.header):
+                r = ecu.respond(req)
+                if r is not None:
+                    msgs += [(hdr, m) for m in self._legacy_split(r)]
+            if count and self.count_semantics != "ignore":
+                msgs = msgs[:count]
+            return lines + ([self._legacy_fmt(h, m) for h, m in msgs] or ["NO DATA"])
         answers = []
         for hdr, ecu in self.car.ecus(self.header):
             r = ecu.respond(req)
@@ -353,6 +424,8 @@ class SimTransport:
 
     def __init__(self, latency=0.0, chunk=0, fail_after_writes=None, **kw):
         self.elm = SimElm327(**kw)
+        if self.elm.car.vehicle == "w211":
+            self.name = "demo (simulated W211 E220 CDI - synthetic data)"
         self.sent = []               # every command line written (for the read-only tests)
         self.latency = latency
         self.chunk = chunk

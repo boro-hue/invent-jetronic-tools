@@ -50,6 +50,8 @@ public class LogSession {
     public double seconds = 0;          // 0 = until stopped
     public boolean noMulti, noCount;
     public Set<Integer> onlyPids;       // null = everything
+    public List<Obd.Did> profile = Obd.PROFILE;   // enhanced (Mode 22) identifiers for this car
+    public String toolName = "Mustang OBD (Android)";
 
     // plan
     Map<String, List<Integer>> sup;
@@ -129,12 +131,12 @@ public class LogSession {
                 }
             }
         }
-        if (primary != null && elm.can11 && !noCount) {
+        if (primary != null && (elm.can11 || !elm.can) && !noCount) {
             String mode = Obd.calibrateCount(elm, primary);
             ui.message("response-count shortcut: " + (mode == null ? "not supported by this adapter" : mode));
         }
         if (onlyPids == null) {
-            for (Obd.Did d : Obd.PROFILE) {
+            for (Obd.Did d : elm.can11 ? profile : new ArrayList<Obd.Did>()) {
                 Object[] r = Obd.readDid(elm, d.ecu, d.did, 0);
                 if ("ok".equals(r[0])) {
                     dids.add(d);
@@ -207,7 +209,7 @@ public class LogSession {
     Map<String, Object> meta(Elm elm, String started) {
         Map<String, Object> m = new LinkedHashMap<String, Object>();
         m.put("started", started);
-        m.put("tool", "Mustang OBD (Android) " + BuildInfo.VERSION);
+        m.put("tool", toolName + " " + BuildInfo.VERSION);
         Map<String, Object> ad = new LinkedHashMap<String, Object>();
         ad.put("transport", elm.t.name());
         ad.put("adapter", elm.version);

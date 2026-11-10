@@ -12,9 +12,15 @@ results), 09 (vehicle info) and 22 (ReadDataByIdentifier). It cannot clear codes
 write, run routines or change diagnostic sessions — anything else is refused in code
 before a byte is sent (`guard_obd` / `guard_at`, covered by tests).
 
-**On a phone?** The same tool as an Android app (Android 6+), with a foreground service so
-logging survives the screen turning off: see [android/README.md](android/README.md) — APK in
-[`android/dist/`](android/dist/).
+**On a phone?** The same tool as Android apps (Android 6+) — *Mustang OBD* and *W211 OBD* —
+with a foreground service so logging survives the screen turning off: see
+[android/README.md](android/README.md) — APKs in [`android/dist/`](android/dist/).
+
+**Other cars / K-line.** Besides CAN, the tool speaks the older K-line (ISO 9141-2,
+ISO 14230-4 KWP2000) and J1850 protocols, auto-detected — e.g. a 2005 Mercedes W211 E220 CDI:
+`py mustang_obd.py --bt --log --profile profile_w211_e220cdi_2005.json` (try it without the
+car: `--demo w211`). On K-line there are no multi-PID requests, Mode 06 or Mode 22, so rows
+are slower and only generic EOBD data is available.
 
 ## What it captures
 

@@ -123,10 +123,14 @@ public final class Obd {
         String best = null;
         for (String h : sup.keySet()) {
             if (best == null) best = h;
-            else if (h.equals("7E8") && !best.equals("7E8")) best = h;
-            else if (!best.equals("7E8") && sup.get(h).size() > sup.get(best).size()) best = h;
+            else if (isEngine(h) && !isEngine(best)) best = h;
+            else if (isEngine(h) == isEngine(best) && sup.get(h).size() > sup.get(best).size()) best = h;
         }
         return best;
+    }
+
+    private static boolean isEngine(String h) {
+        return h.equals("7E8") || h.equals("10");
     }
 
     /** Query each PID alone: lengths and sample data. */
@@ -152,7 +156,7 @@ public final class Obd {
             throws IOException {
         List<Integer> sample = new ArrayList<Integer>();
         for (int p : pids) if (lengths.containsKey(p) && sample.size() < 6) sample.add(p);
-        if (sample.size() < 2) return false;
+        if (sample.size() < 2 || !elm.can) return false;      // multi-PID requests are CAN-only
         target(elm, hdr);
         byte[] m = elm.obd(pidReq(sample)).positiveFrom(0x01, hdr);
         return m != null && Pids.splitMode01(m, lengths).keySet().containsAll(sample);
@@ -161,10 +165,11 @@ public final class Obd {
     /** How (if at all) the adapter honours the trailing response-count digit. */
     public static String calibrateCount(Elm elm, String hdr) throws IOException {
         elm.countMode = null;
-        if (!elm.can11) return null;
+        if (elm.can && !elm.can11) return null;
         target(elm, hdr);
         Elm.Reply r = elm.obd("0100", 4000, 1);
         if (r.positiveFrom(0x01, hdr) == null || !r.partial.isEmpty()) return null;
+        if (!elm.can) return elm.countMode = "sf";             // K-line: one message per PID answer
         byte[] ref = elm.obd("0902").positiveFrom(0x09, hdr);
         if (ref == null || ref.length <= 7) return elm.countMode = "sf";
         byte[] one = elm.obd("0902", 4000, 1).positiveFrom(0x09, hdr);
@@ -179,7 +184,8 @@ public final class Obd {
 
     /** -> {"ok", byte[]} | {"nrc", Integer} | {"none", String} */
     public static Object[] readDid(Elm elm, String ecuReq, int did, int frames) throws IOException {
-        elm.setHeader(elm.can11 ? ecuReq : null);
+        if (!elm.can11) return new Object[]{"none", "Mode 22 is only read on 11-bit CAN"};
+        elm.setHeader(ecuReq);
         String resp = Elm.respFor(ecuReq);
         int count = frames > 0 ? elm.countFor(frames) : (elm.countMode != null ? 1 : 0);
         List<Integer> nrcs = new ArrayList<Integer>();
@@ -254,9 +260,41 @@ public final class Obd {
         return Elm.toHex(data);
     }
 
+    /**
+     * The Mode 09 answer of one ECU in CAN layout [49, info, count, data...]. Non-CAN protocols
+     * send several numbered messages [49, info, seq, 4 bytes] - joined here.
+     */
+    public static byte[] mode09Message(Elm.Reply rep, String hdr, int info, boolean can) {
+        List<byte[]> ms = new ArrayList<byte[]>();
+        for (Object[] p : rep.positive(0x09)) {
+            byte[] m = (byte[]) p[1];
+            if (p[0].equals(hdr) && m.length >= 2 && (m[1] & 0xFF) == info) ms.add(m);
+        }
+        if (ms.isEmpty()) return null;
+        if (can || !(info == 0x02 || info == 0x04 || info == 0x06 || info == 0x08 || info == 0x0A || info == 0x0B))
+            return ms.get(0);
+        java.util.Collections.sort(ms, new java.util.Comparator<byte[]>() {
+            @Override
+            public int compare(byte[] a, byte[] b) {
+                return (a.length > 2 ? a[2] & 0xFF : 0) - (b.length > 2 ? b[2] & 0xFF : 0);
+            }
+        });
+        java.io.ByteArrayOutputStream data = new java.io.ByteArrayOutputStream();
+        for (byte[] m : ms) if (m.length > 3) data.write(m, 3, m.length - 3);
+        int per = info == 0x04 ? 16 : info == 0x06 ? 4 : (info == 0x08 || info == 0x0B) ? 2 : 0;
+        int count = per > 0 ? Math.max(1, data.size() / per) : 1;
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        out.write(0x49);
+        out.write(info);
+        out.write(count);
+        byte[] d = data.toByteArray();
+        out.write(d, 0, d.length);
+        return out.toByteArray();
+    }
+
     public static String readVin(Elm elm, String hdr) throws IOException {
         target(elm, hdr);
-        byte[] m = elm.obd("0902", 6000, 0).positiveFrom(0x09, hdr);
+        byte[] m = mode09Message(elm.obd("0902", 6000, 0), hdr, 0x02, elm.can);
         return m != null && m.length > 3 ? (String) decodeMode09(0x02, m) : null;
     }
 

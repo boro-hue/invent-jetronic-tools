@@ -134,7 +134,7 @@ public class UiTest {
     public void launchesAndShowsHint() {
         MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().get();
         String t = screenText(a);
-        assertTrue(t, t.contains("Mustang OBD"));
+        assertTrue(t, t.contains(AppState.car().appName));
         assertTrue(t, t.contains("(none chosen)"));
     }
 
@@ -152,7 +152,9 @@ public class UiTest {
         assertNotNull("foreground notification", n);
         shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(600));
         String t = screenText(a);
-        assertTrue(t, t.contains("RPM ") && t.contains("Coolant_C") && t.contains("TransFluidTemp_C"));
+        assertTrue(t, t.contains("RPM ") && t.contains("Coolant_C"));
+        if (AppState.car() == Car.MUSTANG) assertTrue(t, t.contains("TransFluidTemp_C"));      // Ford Mode 22
+        else assertTrue(t, t.contains("FuelRailGauge_kPa") && !t.contains("TransFluidTemp_C")); // diesel, K-line
         assertTrue(t, t.contains("Stop"));                       // log button became Stop
         button(a, "Stop").performClick();
         waitFor("job end", new java.util.concurrent.Callable<Boolean>() {
@@ -187,8 +189,13 @@ public class UiTest {
                 return !AppState.running() && AppState.snapshotText != null;
             }
         });
-        assertTrue(AppState.snapshotText, AppState.snapshotText.contains("P0303")
-                && AppState.snapshotText.contains("Misfire cylinder 3"));
+        if (AppState.car() == Car.MUSTANG)
+            assertTrue(AppState.snapshotText, AppState.snapshotText.contains("P0303")
+                    && AppState.snapshotText.contains("Misfire cylinder 3"));
+        else
+            assertTrue(AppState.snapshotText, AppState.snapshotText.contains("P0401")
+                    && AppState.snapshotText.contains("SIMULATED0W211E22")
+                    && AppState.snapshotText.contains("KWP"));
         shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(600));
         assertTrue(screenText(a).contains("TROUBLE CODES"));
         assertEquals("snapshot json + txt", 2, AppState.lastFiles().size());
@@ -294,13 +301,13 @@ public class UiTest {
         for (String k : FakeMediaStore.files.keySet())
             if (k.endsWith(".csv")) csvKey = k;
         assertNotNull("CSV created through MediaStore: " + FakeMediaStore.files.keySet() + " msgs " + AppState.messages(), csvKey);
-        assertTrue(csvKey, csvKey.contains("|Download/MustangOBD/mustang_"));
+        assertTrue(csvKey, csvKey.contains("|Download/" + AppState.car().folder + "/mustang_"));
         String csv = new String(java.nio.file.Files.readAllBytes(FakeMediaStore.files.get(csvKey).toPath()), "UTF-8");
         assertTrue(csv.substring(0, Math.min(80, csv.length())), csv.startsWith("t_s,clock,"));
         assertTrue("rows written", csv.split("\r\n").length > 5);
         for (android.net.Uri u : AppState.lastFiles())
             assertTrue(u.toString(), u.toString().startsWith("content://media/external/downloads/"));
-        assertTrue(AppState.status, AppState.status.contains("Download/MustangOBD/"));
+        assertTrue(AppState.status, AppState.status.contains("Download/" + AppState.car().folder + "/"));
     }
 
     @Test

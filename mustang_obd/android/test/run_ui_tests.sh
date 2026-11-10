@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Robolectric UI tests: the real MainActivity / LoggerService running on the Android
 # framework inside the JVM (no phone, no emulator).
-#   test/run_ui_tests.sh [SDK ...]      default: 23 28 31 32
+#   test/run_ui_tests.sh [SDK ...]      default: 23 28 31 32;  VARIANTS="mustang w211" (default both)
 # Needs: JDK 17+, gradle (only to fetch Robolectric from Maven Central), curl.
 #
 # Two pragmatic substitutions (documented, not hidden):
@@ -16,7 +16,8 @@ SDKS="${*:-23 28 31 32}"
 C="${XDG_CACHE_HOME:-$HOME/.cache}/mustang_obd/robolectric"
 ANDROID_JAR="${XDG_CACHE_HOME:-$HOME/.cache}/mustang_obd/android-all-14-robolectric-10818077.jar"
 mkdir -p "$C/sdk"
-[ -f build/base.apk ] && [ -f "$ANDROID_JAR" ] || ./build_apk.sh
+VARIANTS="${VARIANTS:-mustang w211}"
+for V in $VARIANTS; do [ -f "build/$V/base.apk" ] && [ -f "$ANDROID_JAR" ] || ./build_apk.sh $V; done
 
 ver() { case "$1" in
     23) echo 6.0.1_r3-robolectric-r1;; 26) echo 8.0.0_r4-robolectric-r1;; 28) echo 9-robolectric-4913185-2;;
@@ -55,37 +56,40 @@ LIBS="$(ls "$C"/libs/*.jar | tr '\n' ':')"
 
 W="$(mktemp -d)"
 trap 'rm -rf "$W"' EXIT
-mkdir -p "$W/stubs" "$W/test" "$W/cfg/com/android/tools" "$W/assets"
+mkdir -p "$W/stubs" "$W/assets"
 javac -nowarn --release 17 -cp "$ANDROID_JAR" -d "$W/stubs" $(find test/robolectric/androidx-stubs -name '*.java')
-javac -nowarn --release 17 -cp "$LIBS$ANDROID_JAR:$W/stubs:build/classes" -d "$W/test" test/robolectric/UiTest.java
-cat > "$W/cfg/com/android/tools/test_config.properties" <<P
-android_merged_manifest=$PWD/AndroidManifest.xml
+FAIL=0
+for V in $VARIANTS; do
+mkdir -p "$W/test-$V" "$W/cfg-$V/com/android/tools"
+javac -nowarn --release 17 -cp "$LIBS$ANDROID_JAR:$W/stubs:build/$V/classes" -d "$W/test-$V" test/robolectric/UiTest.java
+cat > "$W/cfg-$V/com/android/tools/test_config.properties" <<P
+android_merged_manifest=$PWD/build/$V/AndroidManifest.xml
 android_merged_assets=$W/assets
-android_resource_apk=$PWD/build/base.apk
+android_resource_apk=$PWD/build/$V/base.apk
 android_custom_package=io.github.borohue.mustangobd
 P
 
-FAIL=0
 for SDK in $SDKS; do
     fetch "$SDK" || { echo "SDK $SDK: framework jar unavailable - skipped"; FAIL=1; continue; }
-    D="$W/deps-$SDK"
+    D="$W/deps-$V-$SDK"
     mkdir -p "$D"
     ln -s "$C/sdk/android-all-instrumented-$(ver "$SDK")-i7.jar" "$D/"
     NEWEST="android-all-instrumented-$(ver 35)-i7.jar"
     if [ -f "$C/sdk/$NEWEST" ]; then ln -sf "$C/sdk/$NEWEST" "$D/$NEWEST"
     else ln -sf "$C/sdk/android-all-instrumented-$(ver "$SDK")-i7.jar" "$D/$NEWEST"; fi
-    echo "sdk=$SDK" > "$W/cfg/robolectric.properties"
-    echo "== Robolectric, Android API $SDK"
+    echo "sdk=$SDK" > "$W/cfg-$V/robolectric.properties"
+    echo "== $V app - Robolectric, Android API $SDK"
     set +e
     java --add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED \
         --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED \
         -Drobolectric.enabledSdks="$SDK" -Drobolectric.offline=true -Drobolectric.dependency.dir="$D" \
-        -cp "$LIBS$W/stubs:build/classes:$W/test:$W/cfg:$ANDROID_JAR" \
-        org.junit.runner.JUnitCore io.github.borohue.mustangobd.UiTest > "$W/out-$SDK.txt" 2>&1
+        -cp "$LIBS$W/stubs:build/$V/classes:$W/test-$V:$W/cfg-$V:$ANDROID_JAR" \
+        org.junit.runner.JUnitCore io.github.borohue.mustangobd.UiTest > "$W/out-$V-$SDK.txt" 2>&1
     RC=$?
     set -e
-    grep -vE "^\s+at (org\.junit|java\.|jdk\.|sun\.|com\.google|org\.robolectric\.internal)" "$W/out-$SDK.txt" \
+    grep -vE "^\s+at (org\.junit|java\.|jdk\.|sun\.|com\.google|org\.robolectric\.internal)" "$W/out-$V-$SDK.txt" \
         | grep -v "^ERROR" || true
-    if [ $RC -ne 0 ] || ! grep -qE "^OK \([1-9][0-9]* tests\)" "$W/out-$SDK.txt"; then FAIL=1; fi
+    if [ $RC -ne 0 ] || ! grep -qE "^OK \([1-9][0-9]* tests\)" "$W/out-$V-$SDK.txt"; then FAIL=1; fi
+done
 done
 exit $FAIL

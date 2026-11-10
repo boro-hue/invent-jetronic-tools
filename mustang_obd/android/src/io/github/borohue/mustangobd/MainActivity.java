@@ -100,7 +100,8 @@ public class MainActivity extends Activity {
         root.setPadding(dp(12), dp(8), dp(12), dp(8));
 
         TextView title = text(20, false, true);
-        title.setText("Mustang OBD  " + BuildInfo.VERSION);
+        title.setText(AppState.car().appName + "  " + BuildInfo.VERSION);
+        setTitle(AppState.car().appName);
         title.setTextIsSelectable(false);
         root.addView(title);
         adapterView = text(14, false, false);
@@ -265,7 +266,7 @@ public class MainActivity extends Activity {
         } else if (!ok) {
             new AlertDialog.Builder(this)
                     .setTitle("Permission needed")
-                    .setMessage("Mustang OBD needs the Bluetooth / Nearby devices permission to talk to the "
+                    .setMessage(AppState.car().appName + " needs the Bluetooth / Nearby devices permission to talk to the "
                             + "OBD adapter (and Location on Android 11 and older, only for finding BLE "
                             + "adapters). Nothing else is accessed.")
                     .setPositiveButton("App settings", new DialogInterface.OnClickListener() {
@@ -345,7 +346,7 @@ public class MainActivity extends Activity {
         }
         labels.add("WiFi adapter...");
         choices.add(new String[]{"wifi"});
-        labels.add("Demo - simulated Mustang (no car needed)");
+        labels.add("Demo - simulated " + AppState.car().description + " (no car needed)");
         choices.add(new String[]{"demo"});
         new AlertDialog.Builder(this)
                 .setTitle("OBD adapter")
@@ -366,7 +367,7 @@ public class MainActivity extends Activity {
                         } else if (c[0].equals("wifi")) {
                             askWifi();
                         } else if (c[0].equals("demo")) {
-                            saveAdapter("demo", "", "Demo (simulated Mustang)");
+                            saveAdapter("demo", "", "Demo (simulated car)");
                         } else if (c[0].equals("bt") || c[0].equals("ble")) {
                             saveAdapter(c[0], c[1], c[2] + (c[0].equals("ble") ? " (BLE)" : "") + " " + c[1]);
                         }
@@ -525,7 +526,7 @@ public class MainActivity extends Activity {
     void share() {
         List<Uri> files = AppState.lastFiles();
         if (files.isEmpty()) {
-            toast("Nothing recorded yet. Files are in Download/" + DownloadsSink.FOLDER);
+            toast("Nothing recorded yet. Files are in Download/" + DownloadsSink.folder());
             return;
         }
         Intent send;

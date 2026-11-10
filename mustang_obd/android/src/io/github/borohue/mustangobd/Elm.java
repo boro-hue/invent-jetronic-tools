@@ -124,7 +124,40 @@ public class Elm {
         }
     }
 
+    /**
+     * Non-CAN replies (ISO 9141-2, ISO 14230-4 KWP2000 "K-line", J1850) with headers on: 3 header
+     * bytes (format/priority, target, source), data, checksum. Keyed by the source address
+     * (e.g. "10" = engine). KWP2000 carries the data length in the format byte.
+     */
+    public static Reply parseLegacy(List<String> lines) {
+        Reply rep = new Reply(lines);
+        for (String ln : lines) {
+            String s = ln.replace(" ", "").toUpperCase(Locale.US);
+            if (s.isEmpty() || s.startsWith("SEARCHING") || (s.startsWith("BUSINIT") && !s.contains("ERROR")))
+                continue;
+            if (!HEX.matcher(s).matches() || s.length() % 2 != 0 || s.length() < 10) {
+                rep.status.add(ln.trim());
+                continue;
+            }
+            byte[] b = hex(s);
+            int fmt = b[0] & 0xFF, n = fmt & 0x3F;
+            String src = String.format(Locale.US, "%02X", b[2] & 0xFF);
+            byte[] data;
+            if ((fmt & 0x80) != 0 && n == 0 && b.length >= 6)            // KWP2000 4-byte header
+                data = Arrays.copyOfRange(b, 4, Math.min(b.length, 4 + (b[3] & 0xFF)));
+            else if ((fmt & 0x80) != 0 && 3 + n <= b.length)             // KWP2000, length in format
+                data = Arrays.copyOfRange(b, 3, 3 + n);
+            else                                                         // ISO 9141-2 / J1850
+                data = Arrays.copyOfRange(b, 3, b.length - 1);
+            if (data.length > 0) add(rep.msgs, src, data);
+            else rep.status.add(ln.trim());
+        }
+        return rep;
+    }
+
+    /** hdrLen: 3 = CAN 11-bit, 8 = CAN 29-bit, 0 = non-CAN (K-line / J1850). */
     public static Reply parse(List<String> lines, int hdrLen) {
+        if (hdrLen == 0) return parseLegacy(lines);
         Reply rep = new Reply(lines);
         Map<String, Object[]> pending = new LinkedHashMap<String, Object[]>(); // hdr -> {total, buf, nextSn}
         for (String ln : lines) {
@@ -210,6 +243,7 @@ public class Elm {
     public Trace trace;
     public String version = "?", protoNum = "?", protoName = "?";
     public int hdrLen = 3;
+    public boolean can = true;
     public boolean can11 = true;
     String header, cra;
     /** response-count shortcut: null, "sf", "messages" or "frames" */
@@ -300,7 +334,8 @@ public class Elm {
         String code = dpn.isEmpty() || dpn.get(0).isEmpty() ? "?"
                 : dpn.get(0).substring(dpn.get(0).length() - 1).toUpperCase(Locale.US);
         protoNum = code;
-        hdrLen = "79".contains(code) ? 8 : 3;
+        can = "6789ABC".contains(code);
+        hdrLen = can ? ("79".contains(code) ? 8 : 3) : 0;
         can11 = "68".contains(code);
         List<String> dp = at("ATDP");
         protoName = dp.isEmpty() ? "?" : dp.get(0);
@@ -320,12 +355,10 @@ public class Elm {
         if (rep.positive(0x01).isEmpty()) {
             for (String s : rep.status)
                 if (HEX.matcher(s.replace(" ", "").toUpperCase(Locale.US)).matches())
-                    throw new UnsupportedAdapterException("The adapter answers without CAN headers (it ignores "
+                    throw new UnsupportedAdapterException("The adapter answers without headers (it ignores "
                             + "ATH1). This clone cannot tell ECUs apart - use an ELM327 v1.4+/STN adapter.");
             throw new CarSilentException(rep.statusText());
         }
-        if (!"6789".contains(protoNum))
-            throw new UnsupportedAdapterException("Protocol " + protoName + " is not CAN.");
         return rep;
     }
 

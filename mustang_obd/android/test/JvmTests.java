@@ -138,6 +138,22 @@ public class JvmTests {
         check(Arrays.equals(r.positiveFrom(1, "18DAF110"), Elm.hex("410D32")), "29-bit header");
         r = Elm.parse(Arrays.asList("7E8 03 7F 22 31"), 3);
         check(r.negative(0x22, "7E8").equals(Arrays.asList(0x31)), "negative response");
+        // K-line: KWP2000 (length in format byte), ISO 9141-2, KWP2000 with a length byte
+        r = Elm.parse(Arrays.asList("84 F1 10 41 0C 0B E0 BD", "BUS INIT: ...OK"), 0);
+        check(Arrays.equals(r.positiveFrom(1, "10"), Elm.hex("410C0BE0")), "K-line KWP2000");
+        r = Elm.parse(Arrays.asList("486B10410C0BE0FB"), 0);
+        check(Arrays.equals(r.positiveFrom(1, "10"), Elm.hex("410C0BE0")), "K-line ISO 9141-2");
+        r = Elm.parse(Arrays.asList("80 F1 10 03 41 0D 32 F9"), 0);
+        check(Arrays.equals(r.positiveFrom(1, "10"), Elm.hex("410D32")), "K-line KWP2000 length byte");
+        for (String s : new String[]{"NO DATA", "BUS INIT: ...ERROR", "?"})
+            check(Elm.parse(Arrays.asList(s), 0).status.equals(Arrays.asList(s)), "K-line status " + s);
+        r = Elm.parse(Arrays.asList("87 F1 10 49 02 03 41 54 45 44 F4", "87 F1 10 49 02 01 00 00 00 53 27",
+                "87 F1 10 49 02 02 49 4D 55 4C 0C", "87 F1 10 49 02 04 30 57 32 31 C1",
+                "87 F1 10 49 02 05 31 45 32 32 B2"), 0);
+        check("SIMULATED0W211E22".equals(Obd.decodeMode09(2, Obd.mode09Message(r, "10", 2, false))),
+                "K-line VIN from 5 messages");
+        r = Elm.parse(Arrays.asList("87 F1 10 43 04 01 06 70 00 00 46"), 0);
+        check(Obd.parseDtcs(r.positiveFrom(3, "10")).equals(Arrays.asList("P0401", "P0670")), "K-line DTCs");
         java.util.Map<Integer, Integer> L = new java.util.HashMap<Integer, Integer>();
         L.put(0x0C, 2);
         L.put(0x0D, 1);
@@ -213,6 +229,77 @@ public class JvmTests {
             check(meta.contains("SIMULATED0MUSTANG"), tag + ": VIN in meta");
         }
         return Arrays.asList(head);
+    }
+
+    static List<String> e2eW211(String tag, Session.TransportFactory f, double seconds) throws Exception {
+        File dir = tmpDir(tag);
+        Session s = new Session(f, Car.W211.protocol, new Collect());
+        LogSession log = new LogSession(s, new DirSink(dir));
+        log.profile = Car.W211.profile;
+        log.seconds = seconds;
+        log.run();
+        List<String> csv = lines(new File(dir, log.csvName));
+        List<String> h = Arrays.asList(csv.get(0).split(",", -1));
+        String[] last = csv.get(csv.size() - 1).split(",", -1);
+        check(csv.size() > 5, tag + ": rows " + (csv.size() - 1));
+        for (String c : new String[]{"Rpm", "Speed_kmh", "Coolant_C", "MAP_kPa", "MAF_gs", "FuelRailGauge_kPa",
+                "CmdEGR_pct", "AdapterVolts_V", "raw_0123"}) {
+            int i = h.indexOf(c);
+            check(i >= 0 && i < last.length && !last[i].isEmpty(), tag + ": column " + c + " filled");
+        }
+        int ir = h.indexOf("FuelRailGauge_kPa"), iraw = h.indexOf("raw_0123");
+        if (ir >= 0 && iraw >= 0 && !last[iraw].isEmpty())
+            check(Integer.parseInt(last[iraw], 16) * 10 == Integer.parseInt(last[ir]), tag + ": rail == raw*10");
+        for (String c : h) check(!c.startsWith("7E") && !c.contains("TransFluid"), tag + ": no CAN-only column " + c);
+        String meta = read(new File(dir, log.csvName.replace(".csv", ".meta.json")));
+        check(meta.contains("SIMULATED0W211E22"), tag + ": VIN (5 K-line messages) in meta");
+        return h;
+    }
+
+    static void w211Tests() throws Exception {
+        final List<SimTransport> made = new ArrayList<SimTransport>();
+        final boolean[] iso = {false};
+        Session.TransportFactory f = new Session.TransportFactory() {
+            public Transport create() {
+                SimTransport t = new SimTransport("w211");
+                t.iso9141 = iso[0];
+                t.latencyMs = 1;
+                made.add(t);
+                return t;
+            }
+        };
+        e2eW211("w211-kwp", f, 2.0);
+        iso[0] = true;
+        e2eW211("w211-iso9141", f, 2.0);
+        iso[0] = false;
+        File dir = tmpDir("w211snap");
+        Snapshot snap = new Snapshot(new Session(f, Car.W211.protocol, new Collect()), new DirSink(dir));
+        snap.profile = Car.W211.profile;
+        snap.run();
+        String json = read(new File(dir, snap.jsonName));
+        check(json.contains("\"P0401\"") && json.contains("\"P0670\""), "w211 snapshot DTCs");
+        check(json.contains("\"VIN\": \"SIMULATED0W211E22\""), "w211 snapshot VIN");
+        check(json.contains("\"FreezeDTC\": \"P0401\""), "w211 freeze frame");
+        check(json.contains("mode06_note") && snap.text.contains("Mode 06:"), "w211 Mode 06 note");
+        check(json.contains("\"FuelRailGauge_kPa\": 28000"), "w211 rail pressure");
+        for (SimTransport t : made)
+            for (String c : t.sent) {
+                String u = c.replace(" ", "").toUpperCase();
+                boolean ok;
+                try {
+                    if (u.startsWith("AT")) Elm.guardAt(u);
+                    else {
+                        String body = u.length() % 2 == 1 ? u.substring(0, u.length() - 1) : u;
+                        Elm.guardObd(body);
+                        check(!(body.startsWith("01") && body.length() > 4), "no multi-PID on K-line: " + c);
+                        check(!body.startsWith("22") && !body.startsWith("06"), "no Mode 22/06 on K-line: " + c);
+                    }
+                    ok = !u.isEmpty();
+                } catch (Elm.GuardException e) {
+                    ok = false;
+                }
+                check(ok, "w211 sent line passes guard: '" + c + "'");
+            }
     }
 
     static void demoTests() throws Exception {
@@ -307,6 +394,7 @@ public class JvmTests {
         parseTests();
         vectorTests(new File(a[0]));
         demoTests();
+        w211Tests();
         List<String> pyHead = null;
         if (a.length > 1) {
             final int port = Integer.parseInt(a[1]);
@@ -331,6 +419,27 @@ public class JvmTests {
                     return new Transport.Tcp("127.0.0.1", port);
                 }
             }, 6, false);
+        }
+        List<String> w211Head = null;
+        if (a.length > 5) {
+            final int port = Integer.parseInt(a[5]);
+            w211Head = e2eW211("python-sim-w211", new Session.TransportFactory() {
+                public Transport create() {
+                    return new Transport.Tcp("127.0.0.1", port);
+                }
+            }, 2.5);
+        }
+        if (a.length > 6) {
+            final int port = Integer.parseInt(a[6]);
+            e2eW211("python-sim-w211-iso9141", new Session.TransportFactory() {
+                public Transport create() {
+                    return new Transport.Tcp("127.0.0.1", port);
+                }
+            }, 6);           // chunked output is slow: give the slow tier time to cycle once
+        }
+        if (w211Head != null && a.length > 7) {
+            List<String> py = Arrays.asList(lines(new File(a[7])).get(0).split(",", -1));
+            check(py.equals(w211Head), "W211 CSV header identical to Python tool\n  py:   " + py + "\n  java: " + w211Head);
         }
         if (pyHead != null && a.length > 4) {
             // same columns as the Python tool on the same simulator

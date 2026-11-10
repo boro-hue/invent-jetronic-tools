@@ -16,16 +16,20 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Output files. Android 10+: Download/MustangOBD via MediaStore (visible in any file manager,
+ * Output files. Android 10+: Download/<app folder> via MediaStore (visible in any file manager,
  * kept if the app is uninstalled). Older: the app's own folder, shared via LogProvider.
  */
 public class DownloadsSink implements Session.Sink {
-    public static final String FOLDER = "MustangOBD";
     private final Context ctx;
     public final List<Uri> created = new ArrayList<Uri>();
 
     public DownloadsSink(Context ctx) {
         this.ctx = ctx.getApplicationContext();
+    }
+
+    /** Download sub-folder of this app variant, e.g. "MustangOBD" or "W211OBD". */
+    public static String folder() {
+        return AppState.car().folder;
     }
 
     public static File privateDir(Context ctx) {
@@ -42,7 +46,7 @@ public class DownloadsSink implements Session.Sink {
                 ContentValues v = new ContentValues();
                 v.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
                 v.put(MediaStore.MediaColumns.MIME_TYPE, mime);
-                v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + FOLDER);
+                v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + folder());
                 ContentResolver r = ctx.getContentResolver();
                 Uri uri = r.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
                 if (uri != null) {
@@ -71,7 +75,7 @@ public class DownloadsSink implements Session.Sink {
         }
         File f = new File(privateDir(ctx), name);
         synchronized (created) {
-            created.add(LogProvider.uriFor(f.getName()));
+            created.add(LogProvider.uriFor(ctx, f.getName()));
         }
         return new FileOutputStream(f);
     }
@@ -79,6 +83,6 @@ public class DownloadsSink implements Session.Sink {
     @Override
     public String where(String name) {
         File f = new File(privateDir(ctx), name);
-        return f.exists() ? f.getPath() : "Download/" + FOLDER + "/" + name;
+        return f.exists() ? f.getPath() : "Download/" + folder() + "/" + name;
     }
 }

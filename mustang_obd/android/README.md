@@ -1,12 +1,18 @@
-# Mustang OBD — Android app
+# Mustang OBD / W211 OBD — Android apps
 
 The phone version of [`mustang_obd.py`](../README.md): a read-only, catch-all OBD-II logger
-for a 2016 Ford Mustang 3.7 V6 (works on any CAN OBD-II car) over a Bluetooth ELM327 adapter.
-Same logic, same CSV columns, same safety rules — ported to Java and tested against the
-Python tool.
+over a Bluetooth ELM327 adapter. Same logic, same CSV columns, same safety rules — ported to
+Java and tested against the Python tool. One codebase, one app per car (they install side
+by side):
 
-**Download:** [`dist/MustangOBD-1.0.apk`](dist/MustangOBD-1.0.apk) (Android 6.0 or newer;
-`dist/*.sha256` has the checksum).
+| App | For | Download (Android 6.0+) |
+|---|---|---|
+| **Mustang OBD** | 2016 Ford Mustang 3.7 V6 — CAN, plus Ford transmission-temp/odometer candidates | [`dist/MustangOBD.apk`](dist/MustangOBD.apk) |
+| **W211 OBD** | 2005 Mercedes-Benz E220 CDI (W211) — protocol auto-detected (K-line on pre-2006 cars), generic EOBD | [`dist/W211OBD.apk`](dist/W211OBD.apk) |
+
+Both work on any OBD-II / EOBD car; the differences are the default protocol, the
+car-specific extras, the app name/colour and the download folder. `dist/*.sha256` has the
+checksums.
 
 ## Install
 
@@ -31,7 +37,7 @@ Python tool.
    per-cylinder misfire counters (Mode 06), VIN / calibration IDs and every PID once.
 6. **Share files** sends the last session's files (Drive, e-mail, …).
 
-Files are saved to **Download/MustangOBD** (Android 10+; on 6–9 in the app's own folder —
+Files are saved to **Download/MustangOBD** or **Download/W211OBD** (Android 10+; on 6–9 in the app's own folder —
 use *Share files*): `mustang_*.csv` (every supported PID decoded + raw hex),
 `mustang_*.meta.json` (what the car supports, constants, VIN), `mustang_snapshot_*.json/.txt`.
 The CSV opens in Excel / Google Sheets and has exactly the same columns as the laptop tool.
@@ -44,6 +50,23 @@ Same caveats as the laptop tool: the transmission-temperature and odometer value
 **unverified** Ford-specific identifiers (raw bytes are always logged beside them); a manual
 car won't report transmission temperature.
 
+### W211 E220 CDI notes
+
+- The OBD socket is under the dashboard in the driver's footwell (left side), usually behind
+  a small cover.
+- Pre-2006 W211s answer generic OBD (EOBD) over **K-line** (ISO 14230-4 KWP2000 or ISO
+  9141-2); the app finds the protocol by itself (first connect can take ~10 s). Your adapter
+  must support K-line — most ELM327 Bluetooth clones do, but some tiny "CAN-only" ones don't.
+  If the app says *"Adapter OK, but the car did not answer"* with the ignition on, that is
+  the first suspect.
+- K-line is slow: expect roughly 1–3 rows per second (each value is a separate request).
+- What you get is the **generic diesel EOBD set** the engine computer offers: rpm, speed,
+  load, coolant and intake temperature, airflow (MAF), boost (MAP), **common-rail pressure**,
+  commanded EGR, distances/warm-ups since codes were cleared, trouble codes and freeze frame.
+  Mercedes-specific values (injector corrections, rail/boost *targets*, glow plugs, gearbox)
+  are only available through Mercedes diagnostic sessions, which this read-only app
+  deliberately never opens.
+
 Read-only: the app can only send OBD read services (01 02 03 06 07 09 0A 22) — it cannot
 clear codes or change anything in the car. Set it up before driving.
 
@@ -53,7 +76,7 @@ No Android Studio needed:
 
 ```
 sudo apt install openjdk-17-jdk-headless aapt dalvik-exchange zipalign apksigner
-./build_apk.sh            # -> dist/MustangOBD-<version>.apk
+./build_apk.sh            # -> dist/MustangOBD.apk and dist/W211OBD.apk   (or: ./build_apk.sh w211)
 ```
 
 `build_apk.sh` fetches the Android API 34 framework jar from Maven Central once (Robolectric's
@@ -65,14 +88,15 @@ proves nothing about who built an APK — build it yourself if that matters to y
 
 ## Tests
 
-- `test/run_tests.sh` — the OBD core on a plain JVM: decoder parity with the Python tool
+- `test/run_tests.sh` — the OBD core on a plain JVM, CAN and K-line: decoder parity with the Python tool
   (≈ 27 000 generated vectors), parsing, the read-only guard (including an audit of every
   line sent in full sessions), Bluetooth-drop reconnect, Stop, demo log + snapshot, the
   Python simulator over TCP in two adapter variants, the CSV header compared with the
   Python tool's, and optionally the third-party
   [ELM327-emulator](https://github.com/Ircama/ELM327-emulator) (`./run_tests.sh 35000`).
 - `test/run_ui_tests.sh [SDK]` — Robolectric: the real `MainActivity` and `LoggerService`
-  on the Android framework (JVM): launch, adapter dialog with paired devices, Demo log with
-  the foreground notification, Stop, saved files, Share, Snapshot, denied-permission path.
+  of **both apps** on the Android framework (JVM, Android 6/9/12/12L): launch, adapter dialog
+  with paired devices, Demo log (CAN Mustang / K-line W211) with the foreground notification,
+  Stop, saved files incl. MediaStore, Share, Snapshot, denied-permission path.
 
 Not tested on a physical phone or a real adapter yet.
