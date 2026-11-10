@@ -48,6 +48,10 @@ public class LogSession {
     final Session.Sink sink;
     final Session.Listener ui;
     public double seconds = 0;          // 0 = until stopped
+    /** hands-free: end the log once the car (or adapter) has been off this long; 0 = never */
+    public double stopWhenOffSec = 0;
+    /** why the log ended: "stopped", "time", "car off" */
+    public String endReason = "stopped";
     public boolean noMulti, noCount;
     public Set<Integer> onlyPids;       // null = everything
     public List<Obd.Did> profile = Obd.PROFILE;   // enhanced (Mode 22) identifiers for this car
@@ -67,6 +71,7 @@ public class LogSession {
     String vin;
 
     public long rows, reconnects;
+    public double durationSec;
     public String csvName;
 
     public LogSession(Session sess, Session.Sink sink) {
@@ -301,6 +306,7 @@ public class LogSession {
         SimpleDateFormat clock = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US);
         long t0 = System.currentTimeMillis(), lastUi = 0;
         int silent = 0, slowI = 0;
+        long giveUp = stopWhenOffSec > 0 ? (long) (stopWhenOffSec * 1000) : -1;
         try {
             w.write(csvLine(head));
             w.flush();
@@ -315,7 +321,10 @@ public class LogSession {
                 } catch (IOException e) {
                     reconnects++;
                     ui.message(e.getMessage());
-                    sess.reconnect();
+                    if (sess.reconnect(giveUp) == null) {
+                        endReason = "car off";
+                        break;
+                    }
                     continue;
                 }
                 long now = System.currentTimeMillis();
@@ -329,7 +338,10 @@ public class LogSession {
                     w.flush();
                     rows++;
                 } else if (++silent >= 3) {
-                    sess.waitForCar();
+                    if (!sess.waitForCar(giveUp)) {
+                        endReason = "car off";
+                        break;
+                    }
                     silent = 0;
                     continue;
                 }
@@ -340,13 +352,15 @@ public class LogSession {
                     ui.values(new LinkedHashMap<String, String>(state), rows, rate);
                 }
             }
+            if (!sess.stop && "stopped".equals(endReason) && seconds > 0) endReason = "time";
         } catch (Session.Stopped ignored) {
-            // user pressed Stop
+            endReason = "stopped";
         } finally {
             w.close();
             sess.close();
         }
         double dur = (System.currentTimeMillis() - t0) / 1000.0;
+        durationSec = dur;
         ui.message(String.format(Locale.US, "Saved %d rows in %.0f s (%.1f rows/s), %d reconnects: %s",
                 rows, dur, rows / Math.max(dur, 0.001), reconnects, sink.where(csvName)));
     }

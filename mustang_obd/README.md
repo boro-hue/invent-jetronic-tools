@@ -101,7 +101,9 @@ py mustang_obd.py --bt --log --pids 0C,0D,05,0B   # only these PIDs - much faste
 ```
 
 If the Bluetooth link drops it reconnects by itself and keeps appending to the same
-file; if the car stops answering (ignition off) it waits and resumes.
+file; if the car stops answering (ignition off) it waits and resumes. Hands-free:
+`--stop-when-off 120` ends the log by itself once the car (or adapter) has been off for
+2 minutes.
 
 > Set it up before you drive and leave the laptop alone, or have a passenger run it.
 

@@ -25,7 +25,7 @@ def make_args(**kw):
              port=None, baud=38400, rfcomm=None, channel=1, ble=None, tcp=None, demo=True,
              protocol="6", seconds=3.0, hz=0, pids=None, slow_per_cycle=1,
              profile=M.DEFAULT_PROFILE, extra_dids=None, ecu="7E0", no_multi=False,
-             no_count=False, trace=False, sim_factory=None)
+             no_count=False, trace=False, sim_factory=None, stop_when_off=0)
     a.update(kw)
     return argparse.Namespace(**a)
 
@@ -352,6 +352,39 @@ class TestEndToEnd(TempLogDir):
         out = quiet(M.cmd_log, args, M.load_profile(M.DEFAULT_PROFILE))
         self.assertIn("car not answering", out)
         self.assertIn("car is back", out)
+
+    def test_stop_when_off_ends_log_by_itself(self):
+        def factory():
+            t = elm_sim.SimTransport(latency=0.002)
+            t.elm.car.offline_windows = [(1.5, 1e9)]          # ignition off after 1.5 s, for good
+            return t
+        t0 = time.monotonic()
+        args = make_args(seconds=60, stop_when_off=2, sim_factory=factory)
+        out = quiet(M.cmd_log, args, M.load_profile(M.DEFAULT_PROFILE))
+        self.assertLess(time.monotonic() - t0, 20)
+        self.assertIn("car stayed off - ending the log", out)
+        self.assertGreater(len(rows_of(self.newest("mustang_2*.csv"))), 5)
+
+    def test_stop_when_off_gives_up_on_dead_adapter(self):
+        made = []
+
+        class Dead(elm_sim.SimTransport):
+            def open(self):
+                if made and len(made) > 1:
+                    raise ConnectionError("adapter unplugged")
+
+        def factory():
+            made.append(Dead(fail_after_writes=150 if not made else None))
+            return made[-1]
+        old, M.RECONNECT_DELAY = M.RECONNECT_DELAY, 0.2
+        try:
+            t0 = time.monotonic()
+            args = make_args(seconds=60, stop_when_off=1.5, sim_factory=factory)
+            out = quiet(M.cmd_log, args, M.load_profile(M.DEFAULT_PROFILE))
+        finally:
+            M.RECONNECT_DELAY = old
+        self.assertLess(time.monotonic() - t0, 20)
+        self.assertIn("adapter did not come back - ending the log", out)
 
     def test_car_silent_and_headerless_clone(self):
         t = elm_sim.SimTransport()

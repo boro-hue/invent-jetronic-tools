@@ -55,6 +55,8 @@ public class UiTest {
     @Before
     public void reset() {
         app = RuntimeEnvironment.getApplication();
+        SimTransport.ignitionOn = true;
+        LoggerService.handsFreeOffSec = 120;
         AppState.job = null;
         AppState.session = null;
         AppState.status = "Idle";
@@ -308,6 +310,63 @@ public class UiTest {
         for (android.net.Uri u : AppState.lastFiles())
             assertTrue(u.toString(), u.toString().startsWith("content://media/external/downloads/"));
         assertTrue(AppState.status, AppState.status.contains("Download/" + AppState.car().folder + "/"));
+    }
+
+    @Test
+    public void handsFreeDriveEndsByItselfAndOffersShare() throws Exception {
+        LoggerService.handsFreeOffSec = 2;
+        MainActivity a = launchWithDemo();
+        button(a, "Hands-free drive").performClick();
+        ServiceController<LoggerService> sc = runService();
+        assertEquals("auto", AppState.job);
+        waitFor("snapshot then rows", new java.util.concurrent.Callable<Boolean>() {
+            public Boolean call() {
+                return AppState.snapshotText != null && AppState.rows > 10;
+            }
+        });
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(600));
+        assertTrue(screenText(a).contains("Hands-free running"));
+        SimTransport.ignitionOn = false;                         // park and switch off
+        waitFor("hands-free end", new java.util.concurrent.Callable<Boolean>() {
+            public Boolean call() {
+                return !AppState.running();
+            }
+        });
+        SimTransport.ignitionOn = true;
+        assertTrue(AppState.status, AppState.status.startsWith("Drive saved (car switched off)"));
+        assertEquals("snapshot json+txt, log csv+meta", 4, AppState.lastFiles().size());
+        android.app.NotificationManager nm =
+                (android.app.NotificationManager) app.getSystemService(Context.NOTIFICATION_SERVICE);
+        Notification done = null;
+        for (Notification n : shadowOf(nm).getAllNotifications())
+            if (String.valueOf(shadowOf(n).getContentTitle()).endsWith("drive saved")) done = n;
+        assertNotNull("drive-saved notification", done);
+        Intent tap = shadowOf(done.contentIntent).getSavedIntent();
+        assertEquals(MainActivity.ACTION_SHARE_LAST, tap.getAction());
+        MainActivity b = Robolectric.buildActivity(MainActivity.class, tap).setup().get();
+        shadowOf(Looper.getMainLooper()).idle();
+        Intent chooser = shadowOf(b).getNextStartedActivity();
+        assertNotNull("share sheet opened from the notification", chooser);
+        assertEquals(Intent.ACTION_CHOOSER, chooser.getAction());
+        Intent send = chooser.getParcelableExtra(Intent.EXTRA_INTENT);
+        assertEquals(4, send.<android.net.Uri>getParcelableArrayListExtra(Intent.EXTRA_STREAM).size());
+    }
+
+    @Test
+    public void autostartsHandsFreeWhenAppOpens() {
+        app.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putString("kind", "demo")
+                .putString("label", "Demo").putBoolean("autostart", true).commit();
+        Intent launch = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+        Robolectric.buildActivity(MainActivity.class, launch).setup();
+        shadowOf(Looper.getMainLooper()).idle();
+        Intent started = shadowOf(app).getNextStartedService();
+        assertNotNull("hands-free started on launch", started);
+        assertEquals("auto", started.getStringExtra(LoggerService.EXTRA_JOB));
+        // without the option, opening the app starts nothing
+        app.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putBoolean("autostart", false).commit();
+        Robolectric.buildActivity(MainActivity.class, launch).setup();
+        shadowOf(Looper.getMainLooper()).idle();
+        assertEquals(null, shadowOf(app).getNextStartedService());
     }
 
     @Test

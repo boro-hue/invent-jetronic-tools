@@ -21,6 +21,8 @@ public class SimTransport extends Transport {
     private boolean echo, spaces, headers, connected;
     private String protocol, header;
     public int latencyMs = 15;
+    /** Demo/test "ignition": when off, the adapter still answers but the car does not. */
+    public static volatile boolean ignitionOn = true;
     public final List<String> sent = new ArrayList<String>();
     private volatile boolean closed;
 
@@ -158,6 +160,7 @@ public class SimTransport extends Transport {
         byte[] req = Elm.hex(cmd);
         List<String> lines = new ArrayList<String>();
         boolean auto = protocol.equals("0") || protocol.startsWith("A");
+        if (!ignitionOn) return Arrays.asList(connected ? "NO DATA" : "UNABLE TO CONNECT");
         if (w211 && !auto && !protocol.matches("[345]")) return Arrays.asList("CAN ERROR");   // car is on K-line
         if (!connected && auto) lines.add("SEARCHING...");
         else if (!connected && w211) lines.add("BUS INIT: ...OK");

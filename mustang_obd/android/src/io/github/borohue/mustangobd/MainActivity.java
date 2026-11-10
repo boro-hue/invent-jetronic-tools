@@ -44,11 +44,13 @@ public class MainActivity extends Activity {
     static final String P_BT_CONNECT = "android.permission.BLUETOOTH_CONNECT";
     static final String P_BT_SCAN = "android.permission.BLUETOOTH_SCAN";
     static final String P_NOTIFY = "android.permission.POST_NOTIFICATIONS";
+    /** from the "drive saved" notification: open the share sheet with the last files */
+    public static final String ACTION_SHARE_LAST = "io.github.borohue.mustangobd.SHARE_LAST";
 
     private SharedPreferences prefs;
     private TextView adapterView, statusView, gaugesView, valuesView, messagesView;
-    private Button chooseBtn, logBtn, snapBtn, shareBtn;
-    private CheckBox traceBox;
+    private Button chooseBtn, logBtn, snapBtn, shareBtn, handsFreeBtn;
+    private CheckBox traceBox, autoBox;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Runnable pending;
     private final Runnable ticker = new Runnable() {
@@ -107,6 +109,14 @@ public class MainActivity extends Activity {
         adapterView = text(14, false, false);
         root.addView(adapterView);
 
+        handsFreeBtn = button("Hands-free drive", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startJob("auto");
+            }
+        });
+        root.addView(row(handsFreeBtn));
+
         chooseBtn = button("Adapter...", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -146,6 +156,17 @@ public class MainActivity extends Activity {
         traceBox.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         root.addView(row(shareBtn, traceBox));
 
+        autoBox = new CheckBox(this);
+        autoBox.setText("Start hands-free when the app opens");
+        autoBox.setChecked(prefs.getBoolean("autostart", false));
+        autoBox.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                prefs.edit().putBoolean("autostart", autoBox.isChecked()).apply();
+            }
+        });
+        root.addView(autoBox);
+
         statusView = text(15, false, true);
         root.addView(statusView);
 
@@ -162,6 +183,30 @@ public class MainActivity extends Activity {
         root.addView(scroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
         setContentView(root);
         refresh();
+        if (ACTION_SHARE_LAST.equals(getIntent().getAction())) {
+            handler.post(new Runnable() {
+                @Override
+                public void run() {
+                    share();
+                }
+            });
+        } else if (saved == null && Intent.ACTION_MAIN.equals(getIntent().getAction())
+                && prefs.getBoolean("autostart", false) && prefs.getString("kind", null) != null
+                && !AppState.running()) {
+            handler.post(new Runnable() {                 // opened the app = start the drive
+                @Override
+                public void run() {
+                    startJob("auto");
+                }
+            });
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (ACTION_SHARE_LAST.equals(intent.getAction())) share();
     }
 
     @Override
@@ -193,10 +238,14 @@ public class MainActivity extends Activity {
         boolean running = AppState.running();
         String kind = prefs.getString("kind", null);
         adapterView.setText("Adapter: " + (kind == null ? "(none chosen)" : prefs.getString("label", kind)));
+        boolean stoppable = "log".equals(AppState.job) || "auto".equals(AppState.job);
         chooseBtn.setEnabled(!running);
         snapBtn.setEnabled(!running);
-        logBtn.setEnabled(!running || "log".equals(AppState.job));
-        logBtn.setText(running && "log".equals(AppState.job) ? "Stop" : "Start log");
+        handsFreeBtn.setEnabled(!running);
+        handsFreeBtn.setText("auto".equals(AppState.job) ? "Hands-free running - tap Stop when done"
+                : "Hands-free drive");
+        logBtn.setEnabled(!running || stoppable);
+        logBtn.setText(running && stoppable ? "Stop" : "Start log");
         if (!running && kind == null)
             statusView.setText("Choose your OBD adapter (pair it in Android Bluetooth settings first), or try Demo.");
         else statusView.setText(AppState.status);

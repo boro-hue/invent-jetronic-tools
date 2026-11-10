@@ -23,6 +23,21 @@ checksums.
    asks only for Bluetooth / Nearby devices (and Location on Android 11 and older, only to
    find BLE adapters) and notifications (for the "logging" notification).
 
+## Hands-free (recommended for driving)
+
+Tap **Hands-free drive** once — or tick **Start hands-free when the app opens**, then just
+opening the app is enough. The app then, without any further taps:
+
+1. waits for the ignition (open the app before or after starting the engine),
+2. takes a **snapshot** (trouble codes, freeze frame, VIN …),
+3. **logs the whole drive**, also with the screen off,
+4. **ends by itself** once the car has been switched off for 2 minutes (a stall or a short
+   stop with the engine running doesn't end it),
+5. shows a **"drive saved"** notification — tap it and the share sheet opens with all the
+   files (snapshot + log), ready to send to Claude or anywhere else.
+
+**Stop** ends it early at any time. Never handle the phone while driving.
+
 ## Use
 
 1. **Pair the adapter** in the phone's Bluetooth settings (usually named `OBDII`, `OBD2`,

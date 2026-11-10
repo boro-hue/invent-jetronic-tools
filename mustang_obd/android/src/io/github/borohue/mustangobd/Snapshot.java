@@ -19,6 +19,8 @@ public class Snapshot {
     public String jsonName, txtName;
     public List<Obd.Did> profile = Obd.PROFILE;   // enhanced (Mode 22) identifiers for this car
     public String toolName = "Mustang OBD (Android)";
+    /** hands-free: wait for the ignition instead of failing when the car is still off */
+    public boolean waitForCar;
 
     public Snapshot(Session sess, Session.Sink sink) {
         this.sess = sess;
@@ -46,7 +48,7 @@ public class Snapshot {
 
     public void run() throws IOException, Elm.CarSilentException, Elm.UnsupportedAdapterException {
         Session.Listener ui = sess.ui;
-        Elm elm = sess.connect(false);
+        Elm elm = sess.connect(waitForCar);
         try {
             ui.message("Connected: " + elm.version + " via " + elm.t.name() + ", " + elm.protoName);
             snap = new LinkedHashMap<String, Object>();

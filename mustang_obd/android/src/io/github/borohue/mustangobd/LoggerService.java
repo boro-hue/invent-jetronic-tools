@@ -29,7 +29,10 @@ public class LoggerService extends Service {
     public static final String EXTRA_JOB = "job", EXTRA_KIND = "kind", EXTRA_ADDR = "addr", EXTRA_NAME = "name",
             EXTRA_TRACE = "trace";
     static final String CHANNEL = "logging";
-    static final int NOTIF_ID = 1;
+    static final String DONE_CHANNEL = "drives";
+    static final int NOTIF_ID = 1, DONE_NOTIF_ID = 2;
+    /** hands-free: the log ends once the car (or adapter) has been off this long */
+    public static int handsFreeOffSec = 120;
 
     private PowerManager.WakeLock wake;
     private long lastNotif;
@@ -140,6 +143,7 @@ public class LoggerService extends Service {
         Session s = new Session(factory(kind, addr, name), car.protocol, ui);
         AppState.session = s;
         OutputStream traceOut = null;
+        String doneText = null;
         try {
             if (trace) {
                 traceOut = sink.create("elm_trace_" + Session.stamp() + ".txt", "text/plain");
@@ -163,11 +167,36 @@ public class LoggerService extends Service {
                 AppState.snapshotText = snap.text;
                 AppState.status = "Snapshot saved: " + sink.where(snap.txtName);
             } else {
+                boolean handsFree = "auto".equals(job);
+                if (handsFree) {
+                    // 1) wait for the ignition, 2) snapshot, 3) log until the car stays off
+                    s.connectAttempts = Integer.MAX_VALUE;
+                    ui.status("Hands-free: waiting for the car (ignition ON)...");
+                    Snapshot snap = new Snapshot(s, sink);
+                    snap.profile = car.profile;
+                    snap.toolName = car.appName + " (Android)";
+                    snap.waitForCar = true;
+                    try {
+                        snap.run();
+                        AppState.snapshotText = snap.text;
+                    } catch (Session.Stopped e) {
+                        throw e;
+                    } catch (Exception e) {
+                        AppState.message("snapshot skipped: " + e.getMessage());
+                    }
+                }
                 LogSession log = new LogSession(s, sink);
                 log.profile = car.profile;
                 log.toolName = car.appName + " (Android)";
+                if (handsFree) log.stopWhenOffSec = handsFreeOffSec;
                 log.run();
-                AppState.status = "Stopped. " + log.rows + " rows saved: " + sink.where(log.csvName);
+                String what = log.rows + " rows, " + Math.round(log.durationSec / 60) + " min";
+                if (handsFree && "car off".equals(log.endReason)) {
+                    AppState.status = "Drive saved (car switched off): " + what + " - " + sink.where(log.csvName);
+                } else {
+                    AppState.status = "Stopped. " + what + " saved: " + sink.where(log.csvName);
+                }
+                if (log.rows > 0) doneText = what + ". Tap to share the files.";
             }
         } catch (Session.Stopped e) {
             AppState.status = "Stopped.";
@@ -192,6 +221,7 @@ public class LoggerService extends Service {
             synchronized (sink.created) {
                 AppState.setLastFiles(new ArrayList<android.net.Uri>(sink.created));
             }
+            if (doneText != null) notifyDone(doneText);
             AppState.session = null;
             AppState.job = null;
             try {
@@ -229,6 +259,33 @@ public class LoggerService extends Service {
                 .setContentIntent(pi)
                 .addAction(android.R.drawable.ic_media_pause, "Stop", stop);
         return b.build();
+    }
+
+    /** "Drive saved" notification; tapping it opens the share sheet with the session's files. */
+    private void notifyDone(String text) {
+        try {
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            Notification.Builder b;
+            if (Build.VERSION.SDK_INT >= 26) {
+                nm.createNotificationChannel(new NotificationChannel(DONE_CHANNEL, "Finished drives",
+                        NotificationManager.IMPORTANCE_DEFAULT));
+                b = new Notification.Builder(this, DONE_CHANNEL);
+            } else {
+                b = new Notification.Builder(this);
+            }
+            Intent share = new Intent(this, MainActivity.class).setAction(MainActivity.ACTION_SHARE_LAST)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            PendingIntent pi = PendingIntent.getActivity(this, 2, share,
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            b.setSmallIcon(android.R.drawable.stat_sys_download_done)
+                    .setContentTitle(AppState.car().appName + ": drive saved")
+                    .setContentText(text)
+                    .setAutoCancel(true)
+                    .setContentIntent(pi);
+            nm.notify(DONE_NOTIF_ID, b.build());
+        } catch (RuntimeException e) {
+            AppState.message("could not show the 'drive saved' notification: " + e.getMessage());
+        }
     }
 
     private void goForeground(String text) {

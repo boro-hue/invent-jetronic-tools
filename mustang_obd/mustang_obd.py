@@ -34,6 +34,7 @@ Examples:
   py mustang_obd.py --bt --snapshot
   py mustang_obd.py --bt --log
   py mustang_obd.py --port COM7 --log --seconds 1800
+  py mustang_obd.py --bt --log --stop-when-off 120   # hands-free: ends 2 min after engine off
   py mustang_obd.py --bt --scan-dids quick
 """
 
@@ -1117,12 +1118,19 @@ class Session:
                 print(f"  connecting... ({tries}/{attempts}: {e})")
                 time.sleep(2)
 
-    def reconnect(self):
+    def reconnect(self, give_up=None):
+        """Reopen the link. give_up: seconds after which to stop trying (None = never);
+        returns the new Elm327, or None when it gave up."""
         self.close()
         delay = RECONNECT_DELAY
+        t0 = time.monotonic()
         while True:
+            left = None if give_up is None else give_up - (time.monotonic() - t0)
+            if left is not None and left <= 0:
+                print("\n  adapter did not come back - ending the log.")
+                return None
             print(f"\n  link lost - reconnecting in {delay}s (Ctrl+C to stop)...")
-            time.sleep(delay)
+            time.sleep(delay if left is None else min(delay, left))
             try:
                 self.open()
                 print("  reconnected.")
@@ -1591,6 +1599,7 @@ def cmd_log(args, profile):
     t0 = time.monotonic()
     last_print = 0.0
     min_period = 1.0 / args.hz if args.hz > 0 else 0.0
+    give_up = getattr(args, "stop_when_off", 0) or None   # hands-free: end when the car stays off
     with open(base + ".csv", "w", newline="", buffering=1, encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(header)
@@ -1607,7 +1616,8 @@ def cmd_log(args, profile):
                 except (LinkError, OSError) as e:
                     errors += 1
                     print(f"\n  {e}")
-                    sess.reconnect()
+                    if sess.reconnect(give_up) is None:
+                        break
                     continue
                 now = time.monotonic()
                 if answered:
@@ -1619,7 +1629,8 @@ def cmd_log(args, profile):
                 else:
                     silent += 1
                     if silent >= 3:
-                        wait_for_car(sess)
+                        if not wait_for_car(sess, give_up):
+                            break
                         silent = 0
                         continue
                 if now - last_print >= 0.5:
@@ -1637,19 +1648,26 @@ def cmd_log(args, profile):
           f"{errors} reconnects.\n  {base}.csv\n  {base}.meta.json")
 
 
-def wait_for_car(sess):
-    print("\n  car not answering (ignition off?) - waiting. Ctrl+C to stop.")
+def wait_for_car(sess, give_up=None):
+    """Ignition off mid-log: poll slowly. Returns True when the car answers again,
+    False after `give_up` seconds of silence (None = wait forever)."""
+    print("\n  car not answering (ignition off?) - waiting. Ctrl+C to stop."
+          + (f" Ending the log if it stays off {give_up:.0f}s." if give_up else ""))
+    t0 = time.monotonic()
     while True:
+        left = None if give_up is None else give_up - (time.monotonic() - t0)
+        if left is not None and left <= 0:
+            print("  car stayed off - ending the log.")
+            return False
         try:
             elm = sess.elm
             elm.set_header(None)
             if elm.obd("0100", timeout=6.0).positive(0x01):
                 print("  car is back.")
-                return
+                return True
         except (LinkError, OSError):
-            sess.reconnect()
-            return
-        time.sleep(2)
+            return sess.reconnect(left) is not None
+        time.sleep(2 if left is None else max(0.0, min(2, left)))
 
 
 # ----------------------------------------------------------------------------- DID scan
@@ -1761,6 +1779,8 @@ def main():
                       help="ELM protocol: 6 = CAN 11-bit 500k (Mustang, default), 0 = auto")
     lg = ap.add_argument_group("logging")
     lg.add_argument("--seconds", type=float, default=0, help="stop after N seconds (0 = Ctrl+C)")
+    lg.add_argument("--stop-when-off", type=float, default=0, metavar="SEC",
+                    help="hands-free: end the log once the car (or adapter) has been off this long, e.g. 120")
     lg.add_argument("--hz", type=float, default=0, help="max rows per second (0 = as fast as possible)")
     lg.add_argument("--pids", help="log only these Mode 01 PIDs, e.g. 0C,0D,05,0B")
     lg.add_argument("--slow-per-cycle", type=int, default=1,

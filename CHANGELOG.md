@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-10 — Hands-free mode (apps 1.2)
+
+- **Hands-free drive** in both Android apps: one tap (or automatically when the app opens,
+  if enabled) waits for the ignition, takes a snapshot, logs the drive and ends by itself
+  once the car has been off for 2 minutes; a "drive saved" notification opens the share
+  sheet with all the session's files.
+- Same end-of-drive rule in the core and the Python tool (`--stop-when-off SEC`): the log
+  ends when the car stays silent or the adapter does not come back within that time.
+- Tests: Python 34, JVM ~47 400 checks, Robolectric 64 (8 tests × 4 Android versions × 2
+  apps) incl. the full hands-free flow and auto-start.
+
 ## 2026-11-10 — W211 OBD app + K-line support
 
 - `mustang_obd` (Python and Android) now speaks **K-line and J1850** besides CAN: ISO 9141-2

@@ -302,6 +302,69 @@ public class JvmTests {
             }
     }
 
+    static void stopWhenOffTests() throws Exception {
+        Session.reconnectDelayMs = 100;
+        Session.TransportFactory f = new Session.TransportFactory() {
+            public Transport create() {
+                SimTransport t = new SimTransport();
+                t.latencyMs = 1;
+                return t;
+            }
+        };
+        SimTransport.ignitionOn = true;
+        Thread off = new Thread(new Runnable() {
+            public void run() {
+                try {
+                    Thread.sleep(1500);
+                } catch (InterruptedException ignored) {
+                }
+                SimTransport.ignitionOn = false;
+            }
+        });
+        LogSession log = new LogSession(new Session(f, "6", new Collect()), new DirSink(tmpDir("off")));
+        log.stopWhenOffSec = 2;
+        long t0 = System.currentTimeMillis();
+        off.start();
+        log.run();
+        SimTransport.ignitionOn = true;
+        check("car off".equals(log.endReason) && log.rows > 5 && System.currentTimeMillis() - t0 < 15000,
+                "hands-free: log ends after ignition off (" + log.endReason + ", rows " + log.rows + ")");
+
+        final int[] n = {0};
+        Session.TransportFactory dead = new Session.TransportFactory() {
+            public Transport create() {
+                final boolean first = n[0]++ == 0;
+                SimTransport t = new SimTransport() {
+                    int writes;
+
+                    @Override
+                    public void open() {
+                        if (!first) throw new RuntimeException("adapter unplugged");
+                    }
+
+                    @Override
+                    public void write(byte[] d) throws IOException {
+                        if (first && ++writes > 150) throw new IOException("simulated Bluetooth drop");
+                        super.write(d);
+                    }
+                };
+                t.latencyMs = 1;
+                return t;
+            }
+        };
+        Collect ui = new Collect();
+        LogSession log2 = new LogSession(new Session(dead, "6", ui), new DirSink(tmpDir("dead")));
+        log2.stopWhenOffSec = 1.5;
+        t0 = System.currentTimeMillis();
+        log2.run();
+        check("car off".equals(log2.endReason) && ui.saw("adapter did not come back")
+                && System.currentTimeMillis() - t0 < 15000, "hands-free: gives up on a dead adapter");
+        LogSession log3 = new LogSession(new Session(f, "6", new Collect()), new DirSink(tmpDir("time")));
+        log3.seconds = 1;
+        log3.run();
+        check("time".equals(log3.endReason), "end reason 'time'");
+    }
+
     static void demoTests() throws Exception {
         final List<SimTransport> made = new ArrayList<SimTransport>();
         Session.TransportFactory f = new Session.TransportFactory() {
@@ -395,6 +458,7 @@ public class JvmTests {
         vectorTests(new File(a[0]));
         demoTests();
         w211Tests();
+        stopWhenOffTests();
         List<String> pyHead = null;
         if (a.length > 1) {
             final int port = Integer.parseInt(a[1]);

@@ -3,8 +3,8 @@
      Component names are fully qualified because the Java package stays the same for every variant. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="io.github.borohue.mustangobd"
-    android:versionCode="2"
-    android:versionName="1.1">
+    android:versionCode="3"
+    android:versionName="1.2">
 
     <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="34" />
 
